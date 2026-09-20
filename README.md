@@ -6,7 +6,6 @@ An LLM assistant on top of the Canvas LMS REST API that keeps a student on track
 |---|---|
 | **Assignment reminders** | Upcoming/missing assignments on the dashboard, in chat, and in the daily brief |
 | **Announcements → calendar** | Each new announcement is read by Claude; schedule changes (due-date moves, cancelled classes, room changes, new events) become **proposals** you approve before anything is written to Canvas |
-| **Missed assignment → message** | Claude drafts a Canvas Inbox message to the instructor using the syllabus late policy; you edit and send it from the Proposals inbox |
 | **Syllabus reading** | If a course has a Syllabus tab, Claude extracts office hours, late policy, grading weights and exam dates |
 | **Office hours → calendar** | Extracted office hours are proposed as weekly recurring calendar slots; chat can find office-hour times you're actually free |
 | **Daily briefing** | A morning digest written by Claude from live data, pushed to Discord (or just shown in the app) on a cron schedule |
