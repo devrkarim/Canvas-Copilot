@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf node_modules/better-sqlite3)",
+      "Bash(npm install *)",
+      "PowerShell([Environment]::GetFolderPath\\('Desktop'\\); Test-Path \"C:\\\\Users\\\\gfxre\\\\Desktop\\\\canvas-copilot\\\\package.json\"; Get-ChildItem \"C:\\\\Users\\\\gfxre\" -Directory | Select-Object -ExpandProperty Name)",
+      "PowerShell(robocopy \"C:\\\\Users\\\\gfxre\\\\Desktop\\\\canvas-copilot\" \"C:\\\\Users\\\\gfxre\\\\OneDrive\\\\Desktop\\\\canvas-copilot\" /E /XD node_modules .next /NFL /NDL /NJH /NP)"
+    ]
+  }
+}

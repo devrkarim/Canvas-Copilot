@@ -1,0 +1,49 @@
+# Replace @person-a etc. with GitHub handles. Reviews are auto-requested when a PR touches an owned path.
+
+# A — Canvas & data
+/lib/canvas/            @person-a
+/lib/db.ts              @person-a
+/lib/sync.ts            @person-a
+/lib/proposals.ts       @person-a
+/app/api/sync/          @person-a
+/app/api/proposals/     @person-a
+/app/api/status/        @person-a
+/app/api/dashboard/     @person-a
+/tests/sync.test.ts     @person-a
+
+# B — LLM: extraction, tools, chat
+/lib/llm.ts             @person-b
+/lib/extract/           @person-b
+/lib/tools/             @person-b
+/app/api/chat/          @person-b
+/tests/tools.test.ts    @person-b
+
+# C — Planner & briefing
+/lib/time.ts            @person-c
+/lib/forecast.ts        @person-c
+/lib/briefing.ts        @person-c
+/instrumentation.ts     @person-c
+/app/api/forecast/      @person-c
+/app/api/briefing/      @person-c
+/tests/forecast.test.ts @person-c
+/tests/edge.test.ts     @person-c
+
+# D — Frontend & demo
+/app/page.tsx           @person-d
+/app/layout.tsx         @person-d
+/app/globals.css        @person-d
+/app/chat/              @person-d
+/app/proposals/         @person-d
+/app/forecast/          @person-d
+/app/components/        @person-d
+/scripts/               @person-d
+/README.md              @person-d
+/.env.example           @person-d
+
+# Shared config — A merges
+/package.json           @person-a
+/package-lock.json      @person-a
+/tsconfig.json          @person-a
+/next.config.ts         @person-a
+/vitest.config.mts      @person-a
+/tests/setup.ts         @person-a
