@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
+import { Markdown } from "./components/Markdown";
 import { Button, Card, Empty, Pill, fmt } from "./components/ui";
 
 interface Status {
@@ -174,7 +174,7 @@ export default function Dashboard() {
 
       <Card title={`Latest briefing${briefing ? ` · ${fmt(briefing.created_at, tz)}` : ""}`}>
         {!briefing ? <Empty>No briefing yet. Click “Send briefing now” or wait for the {process.env.NEXT_PUBLIC_BRIEFING_HOUR ?? "7:00"} schedule.</Empty> : (
-          <div className="prose-chat text-sm"><ReactMarkdown>{briefing.content}</ReactMarkdown></div>
+          <div className="prose-chat text-sm"><Markdown>{briefing.content}</Markdown></div>
         )}
       </Card>
 

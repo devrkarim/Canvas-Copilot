@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import ReactMarkdown from "react-markdown";
+import { Markdown } from "../components/Markdown";
 import { Button } from "../components/ui";
 
 /** What we render. `history` is the raw API message list we replay to the server. */
@@ -126,10 +126,10 @@ function Chat() {
         )}
         {turns.map((t, i) => (
           <div key={i} className={`flex ${t.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+            <div className={`min-w-0 rounded-2xl px-4 py-2.5 text-sm ${
               t.role === "user"
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                : "bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800"
+                ? "max-w-[80%] bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                : "max-w-[92%] bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800"
             }`}>
               {t.tools.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-1.5">
@@ -141,7 +141,7 @@ function Chat() {
                 </div>
               )}
               {t.role === "assistant" ? (
-                t.text ? <div className="prose-chat"><ReactMarkdown>{t.text}</ReactMarkdown></div>
+                t.text ? <div className="prose-chat"><Markdown>{t.text}</Markdown></div>
                 : !t.error && <span className="text-zinc-400">{t.tools.length ? "Reading…" : "Thinking…"}</span>
               ) : (
                 <span className="whitespace-pre-wrap">{t.text}</span>
