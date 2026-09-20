@@ -17,3 +17,23 @@ body {
 .prose-chat :where(h1, h2, h3) { font-weight: 600; margin-top: 0.75rem; }
 .prose-chat :where(code) { font-family: var(--font-mono); font-size: 0.85em; background: rgb(0 0 0 / 0.06); padding: 0 0.25rem; border-radius: 0.25rem; }
 .prose-chat :where(a) { text-decoration: underline; }
+.prose-chat :where(li) { margin: 0.15rem 0; }
+.prose-chat :where(li > p) { margin: 0; }
+.prose-chat :where(hr) { border-color: rgb(0 0 0 / 0.1); margin: 0.75rem 0; }
+.prose-chat :where(blockquote) { border-left: 2px solid rgb(0 0 0 / 0.15); padding-left: 0.75rem; margin: 0.35rem 0; }
+.prose-chat :where(pre) { background: rgb(0 0 0 / 0.06); padding: 0.6rem 0.75rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0; }
+.prose-chat :where(pre code) { background: none; padding: 0; }
+.prose-chat :where(table) { border-collapse: collapse; width: 100%; font-size: 0.95em; }
+.prose-chat :where(th, td) { border: 1px solid rgb(0 0 0 / 0.12); padding: 0.3rem 0.55rem; text-align: left; vertical-align: top; white-space: nowrap; }
+.prose-chat :where(th) { font-weight: 600; background: rgb(0 0 0 / 0.04); }
+.prose-chat :where(p:first-child, ul:first-child, ol:first-child) { margin-top: 0; }
+.prose-chat :where(p:last-child, ul:last-child, ol:last-child) { margin-bottom: 0; }
+
+@media (prefers-color-scheme: dark) {
+  .prose-chat :where(code), .prose-chat :where(pre) { background: rgb(255 255 255 / 0.08); }
+  .prose-chat :where(pre code) { background: none; }
+  .prose-chat :where(hr) { border-color: rgb(255 255 255 / 0.12); }
+  .prose-chat :where(blockquote) { border-left-color: rgb(255 255 255 / 0.2); }
+  .prose-chat :where(th, td) { border-color: rgb(255 255 255 / 0.14); }
+  .prose-chat :where(th) { background: rgb(255 255 255 / 0.06); }
+}

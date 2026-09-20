@@ -56,12 +56,20 @@ export async function POST(req: Request) {
       });
 
       let aborted = false;
+      // The client concatenates text deltas into one bubble, but a tool-running turn
+      // produces several assistant messages. Without a blank line between their text
+      // blocks the markdown runs together ("…assignments.**Due this week**") and the
+      // second block's list or table never starts on its own line.
+      let sentText = false;
       try {
         for await (const messageStream of runner) {
           for await (const event of messageStream) {
             if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
               send("tool", { name: event.content_block.name });
+            } else if (event.type === "content_block_start" && event.content_block.type === "text") {
+              if (sentText) send("text", { text: "\n\n" });
             } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              if (event.delta.text) sentText = true;
               send("text", { text: event.delta.text });
             }
           }
