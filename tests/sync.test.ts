@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
-import { favoriteCourses, runSync } from "@/lib/sync";
+import { favoriteCourses, mapLimit, runSync } from "@/lib/sync";
 import { db, getPref } from "@/lib/db";
 import { canvasGetAll, CanvasError } from "@/lib/canvas/client";
 
@@ -112,6 +112,8 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end("{}");
 });
 
+const instructorRequests = () => requests.filter((p) => /^\/api\/v1\/courses\/\d+\/users$/.test(p)).length;
+
 let port = 0;
 beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -121,6 +123,26 @@ beforeAll(async () => {
   process.env.TZ = "America/New_York";
 });
 afterAll(() => server.close());
+
+describe("mapLimit", () => {
+  it("never exceeds the concurrency cap and preserves input order", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const out = await mapLimit([1, 2, 3, 4, 5, 6, 7, 8], 3, async (n) => {
+      peak = Math.max(peak, ++inFlight);
+      await new Promise((r) => setTimeout(r, n % 3 === 0 ? 5 : 1));
+      inFlight--;
+      return n * 2;
+    });
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(peak).toBe(3); // and it actually parallelises
+    expect(out).toEqual([2, 4, 6, 8, 10, 12, 14, 16]);
+  });
+
+  it("handles an empty list without hanging", async () => {
+    await expect(mapLimit([], 4, async () => 1)).resolves.toEqual([]);
+  });
+});
 
 describe("favoriteCourses", () => {
   it("keeps only starred courses and counts the rest", () => {
@@ -142,6 +164,14 @@ describe("runSync against mock Canvas", () => {
     expect(contextCodeMax).toBeLessThanOrEqual(10);
     expect(report.warnings.filter((w) => !w.startsWith("ANTHROPIC"))).toEqual([]);
     expect(getPref("me_name")).toBe("Test Student");
+  });
+
+  it("does not re-fetch instructors on a later sync", async () => {
+    const before = instructorRequests();
+    expect(before).toBe(11); // every course on the first sync
+    await runSync({ extract: false });
+    expect(instructorRequests()).toBe(before); // …and none on the second
+    expect((db().prepare("SELECT instructor_user_id FROM courses WHERE id = 101").get() as { instructor_user_id: number }).instructor_user_id).toBe(9101);
   });
 
   it("classifies assignments correctly", () => {
@@ -209,12 +239,19 @@ describe("runSync against mock Canvas", () => {
 
   it("falls back to every course when the student has starred nothing", async () => {
     favoriteIds = null;
+    const before = instructorRequests();
     const report = await runSync({ extract: false });
 
     expect(report.favoritesSet).toBe(false);
     expect(report.courses).toBe(10);
     expect(report.coursesHidden).toBe(0);
     expect(getPref("favorites_set")).toBe("0");
+
+    // The courses purged while un-starred came back with no instructor, so the
+    // day-long cache must not stop us re-fetching theirs.
+    expect(instructorRequests()).toBeGreaterThan(before);
+    const missing = db().prepare("SELECT COUNT(*) n FROM courses WHERE instructor_user_id IS NULL").get();
+    expect(missing).toEqual({ n: 0 });
   });
 
   it("surfaces non-rate-limit HTTP errors as CanvasError with status", async () => {

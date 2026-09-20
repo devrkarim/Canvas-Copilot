@@ -30,6 +30,33 @@ export interface SyncReport {
 }
 
 /**
+ * Per-course Canvas requests run concurrently, capped so a student with many
+ * starred courses doesn't trip Canvas's throttle (which the client retries, but
+ * slowly — see `request` in lib/canvas/client.ts).
+ */
+const CANVAS_CONCURRENCY = 6;
+
+/** Instructors are re-checked at most once a day; they don't change mid-term. */
+const INSTRUCTOR_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * `Promise.all` with a ceiling on in-flight work. Results come back in input
+ * order regardless of completion order.
+ */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+/**
  * The courses Canvas Copilot is allowed to see: the ones starred on the Canvas
  * dashboard. Canvas itself falls back to "all enrolled courses" when a student
  * has starred nothing (see GET /users/self/favorites/courses), and we match that
@@ -106,18 +133,33 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
   }
 
   // ---- instructors (needed for messaging) ----
+  // Who teaches a course effectively never changes, so this was ~1.3s of every
+  // sync spent re-learning it. Refetch only when we don't have one (including a
+  // course that was just re-added) or the answer is a day old.
   const setInstructor = conn.prepare(
     "UPDATE courses SET instructor_name = ?, instructor_email = ?, instructor_user_id = ? WHERE id = ?",
   );
-  for (const id of courseIds) {
+  const knownInstructor = new Map(
+    (conn.prepare("SELECT id, instructor_user_id FROM courses").all() as { id: number; instructor_user_id: number | null }[])
+      .map((r) => [r.id, r.instructor_user_id]),
+  );
+  const needInstructor = courseIds.filter((id) => {
+    if (!knownInstructor.get(id)) return true;
+    const at = getPref(`instructors_at:${id}`);
+    return !at || Date.now() - Date.parse(at) > INSTRUCTOR_TTL_MS;
+  });
+  for (const { id, people } of await mapLimit(needInstructor, CANVAS_CONCURRENCY, async (id) => {
     try {
-      const people = await canvas.listInstructors(id);
-      const teacher =
-        people.find((p) => p.enrollments?.some((e) => e.type === "TeacherEnrollment")) ?? people[0];
-      if (teacher) setInstructor.run(teacher.name, teacher.email ?? null, teacher.id, id);
+      return { id, people: await canvas.listInstructors(id) };
     } catch (e) {
       report.warnings.push(`instructors for course ${id}: ${(e as Error).message}`);
+      return { id, people: null };
     }
+  })) {
+    if (!people) continue; // leave whatever we already know in place
+    const teacher = people.find((p) => p.enrollments?.some((e) => e.type === "TeacherEnrollment")) ?? people[0];
+    if (teacher) setInstructor.run(teacher.name, teacher.email ?? null, teacher.id, id);
+    setPref(`instructors_at:${id}`, ts);
   }
 
   // ---- assignments ----
@@ -130,8 +172,44 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
       score=excluded.score, missing=excluded.missing, synced_at=excluded.synced_at
   `);
   const NON_SUBMITTABLE = new Set(["none", "on_paper", "not_graded", "wiki_page", "attendance"]);
-  for (const id of courseIds) {
-    const assignments = await canvas.listAssignments(id);
+
+  // ---- fetch assignments, missing, announcements and calendar concurrently ----
+  // Four independent endpoints that used to run back to back. Only their *writes*
+  // are ordered: missing_submissions marks assignment rows, so it has to land
+  // after the upserts. Every promise carries its own catch — hoisting a bare
+  // rejecting promise would trip Node's unhandled-rejection handling before the
+  // `await` further down attaches one.
+  const now = new Date();
+  const contextCodes = [`user_${me.id}`, ...courseIds.map((id) => `course_${id}`)];
+  const settle = <T>(p: Promise<T>) => p.then((v) => ({ ok: true as const, v }), (e: Error) => ({ ok: false as const, e }));
+
+  const assignmentsP = mapLimit(courseIds, CANVAS_CONCURRENCY, async (id) => {
+    try {
+      return { id, assignments: await canvas.listAssignments(id) };
+    } catch (e) {
+      report.warnings.push(`assignments for course ${id}: ${(e as Error).message}`);
+      return { id, assignments: null };
+    }
+  });
+  const missingP = settle(canvas.listMissing());
+  const annsP = settle(
+    canvas.listAnnouncements(
+      courseIds,
+      formatISO(subDays(now, 30), { representation: "date" }),
+      formatISO(addDays(now, 1), { representation: "date" }),
+    ),
+  );
+  const eventsP = settle(
+    canvas.listCalendarEvents(
+      contextCodes,
+      formatISO(subDays(now, 1), { representation: "date" }),
+      formatISO(addDays(now, 28), { representation: "date" }),
+    ),
+  );
+
+  for (const { id, assignments } of await assignmentsP) {
+    // On failure keep the rows we already have rather than deleting them as stale.
+    if (!assignments) continue;
     const seen: number[] = [];
     for (const a of assignments) {
       if (a.published === false) continue;
@@ -164,21 +242,18 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
   conn.prepare("UPDATE assignments SET missing = 0 WHERE submitted = 1").run();
   // Canvas's own "missing" list is authoritative where available. It spans every
   // course, but only updates rows we already store, so un-starred ones stay out.
-  try {
-    const missing = await canvas.listMissing();
+  const missingRes = await missingP;
+  if (!missingRes.ok) {
+    report.warnings.push(`missing_submissions: ${missingRes.e.message}`);
+  } else {
     const mark = conn.prepare("UPDATE assignments SET missing = 1 WHERE id = ?");
-    for (const m of missing) mark.run(m.id);
-  } catch (e) {
-    report.warnings.push(`missing_submissions: ${(e as Error).message}`);
+    for (const m of missingRes.v) mark.run(m.id);
   }
 
   // ---- announcements (last 30 days) ----
-  const now = new Date();
-  const anns = await canvas.listAnnouncements(
-    courseIds,
-    formatISO(subDays(now, 30), { representation: "date" }),
-    formatISO(addDays(now, 1), { representation: "date" }),
-  );
+  const annsRes = await annsP;
+  if (!annsRes.ok) throw annsRes.e; // as before: a failure here fails the sync
+  const anns = annsRes.v;
   const insertAnn = conn.prepare(`
     INSERT INTO announcements(id, course_id, title, message, posted_at, html_url, processed, synced_at)
     VALUES(@id, @course_id, @title, @message, @posted_at, @html_url, 0, @synced_at)
@@ -198,25 +273,21 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
   }
 
   // ---- calendar (user + courses, next 28 days) ----
-  const contextCodes = [`user_${me.id}`, ...courseIds.map((id) => `course_${id}`)];
-  try {
-    const events = await canvas.listCalendarEvents(
-      contextCodes,
-      formatISO(subDays(now, 1), { representation: "date" }),
-      formatISO(addDays(now, 28), { representation: "date" }),
-    );
+  const eventsRes = await eventsP;
+  if (!eventsRes.ok) {
+    report.warnings.push(`calendar_events: ${eventsRes.e.message}`);
+  } else {
+    // Only wipe the table once we actually have a replacement set in hand.
     conn.prepare("DELETE FROM calendar_events").run();
     const insertEvt = conn.prepare(`
       INSERT INTO calendar_events(id, title, start_at, end_at, location_name, context_code, synced_at)
       VALUES(?, ?, ?, ?, ?, ?, ?)
     `);
-    for (const e of events) {
+    for (const e of eventsRes.v) {
       if (e.workflow_state === "deleted") continue;
       insertEvt.run(e.id, e.title, e.start_at, e.end_at, e.location_name ?? null, e.context_code, ts);
       report.calendarEvents++;
     }
-  } catch (e) {
-    report.warnings.push(`calendar_events: ${(e as Error).message}`);
   }
 
   setPref("last_sync", ts);

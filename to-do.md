@@ -1,5 +1,3 @@
-- add read syllabus feature
-- fix sync button slow
 - add extension feature
 - finish up plume submission
 - chatbot resetting when changing tabs (implement persistence)
