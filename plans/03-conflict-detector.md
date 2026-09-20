@@ -40,11 +40,11 @@ A useful piece of context: the course detail page (`/courses/[id]`) already rend
 
 ## The pitch
 
-> ⚠️ **CS 101 midterm: the syllabus says Oct 10, Canvas says Oct 12.**
+> **CS 101 midterm: the syllabus says Oct 10, Canvas says Oct 12.**
 > → *"Hi Dr. Nair — the syllabus lists the midterm on Friday Oct 10, but the Canvas calendar shows Oct 12. Which is correct?"* — drafted, one click to send.
 
-> ⚠️ **Two exams on Oct 14** (CHEM 122 midterm and CS 101 midterm).
-> ⚠️ **ENGL essay is due at 2:00 PM Thursday — you're in CHEM lab 1–4 PM.**
+> **Two exams on Oct 14** (CHEM 122 midterm and CS 101 midterm).
+> **ENGL essay is due at 2:00 PM Thursday — you're in CHEM lab 1–4 PM.**
 
 Nobody notices these until it's too late. The data to catch all of them is already in the database and currently unused: `courses.exam_dates` is extracted by the syllabus extractor and never read; `announcements.actions` holds extracted date changes; `calendar_events` is only used as busy time.
 
@@ -203,7 +203,7 @@ Write the `get_conflicts` description so the model checks it on "is there anythi
 
 **`/conflicts` page:**
 - Severity-ordered list. Each card shows the two sources side by side — a small two-column comparison (`Syllabus: Fri Oct 10` | `Canvas: Sun Oct 12`) is far more convincing than prose, and it's the screenshot that ends up on the slide.
-- Buttons: **Ask the professor** (→ draft → link to `/proposals`), **Dismiss**, and for resolved ones a muted "resolved ✓" row behind a toggle.
+- Buttons: **Ask the professor** (→ draft → link to `/proposals`), **Dismiss**, and for resolved ones a muted "resolved" row behind a toggle.
 - A **Re-scan** button wired to `POST /api/conflicts/scan`, mirroring the Forecast page's "Recompute".
 - Empty state, driven by `coverage`: "No conflicts found across 3 starred courses, 10 assignments and 12 calendar events." — and, when it applies, the honest caveat: "2 of those courses have no readable syllabus, so their exam dates couldn't be checked." Say what was checked; an empty list with no context reads like a broken feature, and a *misleadingly* empty list is worse than a broken one.
 

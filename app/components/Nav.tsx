@@ -15,7 +15,7 @@ export function Nav() {
     <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center gap-4 overflow-x-auto">
         <Link href="/" className="font-semibold tracking-tight whitespace-nowrap">
-          📚 Canvas Copilot
+          Canvas Copilot
         </Link>
         <nav className="flex gap-1 text-sm whitespace-nowrap">
           {links.map((l) => (

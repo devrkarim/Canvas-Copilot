@@ -13,6 +13,7 @@ Rules:
 - Format as Markdown with exactly these sections, in order, omitting a section only if it is empty:
   **Due today / tomorrow**, **Coming up this week**, **Missing**, **New announcements** (last 24h — one line each, note any schedule changes), **Waiting for your approval** (pending proposals), **Today's study blocks**.
 - Under 180 words. Bullets, no preamble, no sign-off. Times in the student's timezone.
+- No emoji anywhere in the output.
 - If something is overdue or the week looks overloaded, say so plainly in one line at the top.`;
 
 export async function buildBriefing(): Promise<BriefingRow> {
@@ -44,7 +45,7 @@ export async function deliverBriefing(b: BriefingRow): Promise<string[]> {
   const webhook = process.env.DISCORD_WEBHOOK_URL;
   if (webhook) {
     // Discord caps content at 2000 chars.
-    const content = `📚 **Morning brief — ${new Date(b.created_at).toLocaleDateString("en-US", { timeZone: process.env.TZ || "America/New_York", weekday: "long", month: "short", day: "numeric" })}**\n\n${b.content}`.slice(0, 1990);
+    const content = `**Morning brief — ${new Date(b.created_at).toLocaleDateString("en-US", { timeZone: process.env.TZ || "America/New_York", weekday: "long", month: "short", day: "numeric" })}**\n\n${b.content}`.slice(0, 1990);
     const res = await fetch(webhook, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -75,7 +75,7 @@ export default function ForecastPage() {
         <>
           <div className={`rounded-lg p-3 text-sm border ${data.overloaded ? "border-red-300 bg-red-50 dark:bg-red-950 dark:border-red-800" : "border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800"}`}>
             {fmt(data.weekStart).split(",")[0]} → {fmt(data.weekEnd).split(",")[0]}: <b>{data.totalEstimatedHours}h</b> of estimated work, <b>{data.totalFreeHours}h</b> of free study time.
-            {data.overloaded ? " ⚠️ Not everything fits — start earlier or drop something." : " ✅ Everything fits."}
+            {data.overloaded ? " Not everything fits — start earlier or drop something." : " Everything fits."}
           </div>
 
           <Card title="Hours per day (planned vs. free)">
