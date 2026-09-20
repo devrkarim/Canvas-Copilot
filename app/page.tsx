@@ -186,10 +186,14 @@ export default function Dashboard() {
         {!dash?.courses.length ? <Empty>No courses synced.</Empty> : (
           <ul className="grid sm:grid-cols-2 gap-2 text-sm">
             {dash.courses.map((c) => (
-              <li key={c.id} className="rounded-lg border border-zinc-100 dark:border-zinc-800 p-2">
-                <div className="font-medium">{c.code ?? ""} {c.name}</div>
-                <div className="text-zinc-500">{c.instructor ?? "instructor unknown"} · {syllabusLabel(c.syllabus, c.syllabusSource)}</div>
-                {c.latePolicy && <div className="text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">Late policy: {c.latePolicy}</div>}
+              <li key={c.id}>
+                <Link href={`/courses/${c.id}`}
+                  className="block h-full rounded-lg border border-zinc-100 dark:border-zinc-800 p-2 hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                  <div className="font-medium">{c.code ?? ""} {c.name}</div>
+                  <div className="text-zinc-500">{c.instructor ?? "instructor unknown"} · {syllabusLabel(c.syllabus, c.syllabusSource)}</div>
+                  {/* Teaser only — the full policy and syllabus live on the course page. */}
+                  {c.latePolicy && <div className="text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">Late policy: {c.latePolicy}</div>}
+                </Link>
               </li>
             ))}
           </ul>
