@@ -175,7 +175,7 @@ This is the only thing one feature needs from another, and creating it now — a
  * Owner: you (filled in by plans/01). Consumer: Part 1 (triage, plans/02), which imports
  * this from day one and falls back to its own syllabus-based estimate on null.
  *
- * ⚠️ SIGNATURE IS FROZEN. Changing it breaks feat/triage. Fill in the body, not the shape.
+ * SIGNATURE IS FROZEN. Changing it breaks feat/triage. Fill in the body, not the shape.
  */
 export interface AssignmentWeight {
   /** Percentage points of the final course grade, e.g. 3.0 for "3% of the grade". */
@@ -437,14 +437,14 @@ const changed = [...new Set([
 const stray = changed.filter((f) => !OWNED[feature].some((re) => re.test(f)));
 
 if (stray.length) {
-  console.error(`\n❌ feat/${feature} touches ${stray.length} file(s) it does not own:\n`);
+  console.error(`\nFAIL feat/${feature} touches ${stray.length} file(s) it does not own:\n`);
   for (const f of stray) console.error(`   ${f}`);
   console.error(`\nThese are owned by someone else or frozen after the scaffold.`);
   console.error(`Revert them (git checkout ${base} -- <file>) or raise it in the group chat.`);
   console.error(`See plans/README.md §4.2.\n`);
   process.exit(1);
 }
-console.log(`✅ feat/${feature}: ${changed.length} changed file(s), all owned.`);
+console.log(`OK feat/${feature}: ${changed.length} changed file(s), all owned.`);
 ```
 
 Also add `docs/features/.gitkeep`, and append to `AGENTS.md`:

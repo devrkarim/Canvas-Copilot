@@ -94,15 +94,15 @@ export default function Dashboard() {
 
       {status && (!status.canvasConfigured || !status.llmConfigured) && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-3 text-sm">
-          {!status.canvasConfigured && <p>⚠️ Set <code>CANVAS_BASE_URL</code> and <code>CANVAS_TOKEN</code> in <code>.env.local</code>, then restart.</p>}
-          {!status.llmConfigured && <p>⚠️ Set <code>ANTHROPIC_API_KEY</code> in <code>.env.local</code> to enable chat, extraction and briefings.</p>}
+          {!status.canvasConfigured && <p>Set <code>CANVAS_BASE_URL</code> and <code>CANVAS_TOKEN</code> in <code>.env.local</code>, then restart.</p>}
+          {!status.llmConfigured && <p>Set <code>ANTHROPIC_API_KEY</code> in <code>.env.local</code> to enable chat, extraction and briefings.</p>}
         </div>
       )}
       {msg && <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
 
       {status && status.counts.pendingProposals > 0 && (
         <Link href="/proposals" className="block rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3 text-sm">
-          🔔 <b>{status.counts.pendingProposals}</b> proposed change{status.counts.pendingProposals === 1 ? "" : "s"} waiting for your approval →
+          <b>{status.counts.pendingProposals}</b> proposed change{status.counts.pendingProposals === 1 ? "" : "s"} waiting for your approval →
         </Link>
       )}
 
@@ -134,7 +134,7 @@ export default function Dashboard() {
         </Card>
 
         <Card title="Missing" action={dash?.missing.length ? <Link href="/chat?q=Draft a message to my professor about my missing assignments" className="text-sm underline">Draft a message →</Link> : undefined}>
-          {!dash?.missing.length ? <Empty>No missing assignments. 🎉</Empty> : (
+          {!dash?.missing.length ? <Empty>No missing assignments.</Empty> : (
             <ul className="space-y-2 text-sm">
               {dash.missing.map((a) => (
                 <li key={a.id} className="flex justify-between gap-2">
@@ -208,9 +208,9 @@ export default function Dashboard() {
 
 /** Says what we actually hold, not just whether the Syllabus tab has any HTML in it. */
 function syllabusLabel(readable: boolean, source: Dash["courses"][number]["syllabusSource"]): string {
-  if (source === "pdf") return "syllabus ✓ (from PDF)";
+  if (source === "pdf") return "syllabus read from PDF";
   if (source === "link_only") return "syllabus attached, unreadable";
-  return readable ? "syllabus ✓" : "no syllabus tab";
+  return readable ? "syllabus available" : "no syllabus tab";
 }
 
 /**
@@ -221,7 +221,6 @@ function syllabusLabel(readable: boolean, source: Dash["courses"][number]["sylla
 function CourseScope({ status, shown }: { status: Status | null; shown: number }) {
   if (!status?.lastSync) return null;
   const { favoritesSet, hidden, canvasCoursesUrl, total } = status.courseScope;
-  const star = <span className="text-amber-500">★</span>;
   const link = canvasCoursesUrl && (
     <a href={canvasCoursesUrl} target="_blank" rel="noreferrer" className="underline hover:text-zinc-600 dark:hover:text-zinc-300">
       Star courses in Canvas →
@@ -232,17 +231,17 @@ function CourseScope({ status, shown }: { status: Status | null; shown: number }
     <p className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-xs text-zinc-500">
       {!favoritesSet ? (
         <>
-          {star} You haven&apos;t starred any courses in Canvas, so all {total} are included.
+          You haven&apos;t starred any courses in Canvas, so all {total} are included.
           Canvas Copilot follows your stars — star the ones you care about to narrow this down. {link}
         </>
       ) : hidden > 0 ? (
         <>
-          {star} Showing your {shown} starred Canvas course{shown === 1 ? "" : "s"} · {hidden} hidden.
+          Showing your {shown} starred Canvas course{shown === 1 ? "" : "s"} · {hidden} hidden.
           Canvas Copilot only reads starred courses. {link}
         </>
       ) : (
         <>
-          {star} Showing all {shown} of your starred Canvas courses. Canvas Copilot only reads
+          Showing all {shown} of your starred Canvas courses. Canvas Copilot only reads
           starred courses — un-star one in Canvas and it disappears here on the next sync. {link}
         </>
       )}

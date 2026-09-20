@@ -23,42 +23,42 @@ Verified by reading the source, not the README claims.
 
 | Planned feature | Status | Where |
 |---|---|---|
-| Assignment reminders (upcoming / missing) | ✅ Done | `lib/tools/index.ts` (`get_upcoming_assignments`, `get_missing_assignments`), `app/page.tsx`, `lib/briefing.ts` |
-| Announcements → calendar proposals | ✅ Done | `lib/extract/announcement.ts`, `processNewAnnouncements()` in `lib/sync.ts` |
-| Missed assignment → drafted instructor message | ✅ Done | `propose_message` tool + `lib/proposals.ts` |
-| Syllabus reading (office hours, late policy, weights, exam dates) | ✅ Done | `lib/extract/syllabus.ts`, `extractNewSyllabi()` in `lib/sync.ts` |
-| Office hours → calendar + "when am I free for office hours" | ✅ Done | `find_office_hours_slot`, syllabus-driven `calendar_create` proposals |
-| Daily briefing | ✅ Done (Discord only) | `lib/briefing.ts`, `instrumentation.ts` cron |
-| Weekly workload forecast + study plan packing | ✅ Done | `lib/forecast.ts`, `app/forecast/page.tsx` |
-| Natural-language chat over everything | ✅ Done | `app/api/chat/route.ts` + shared tool set |
-| Human-in-the-loop proposals inbox | ✅ Done | `lib/proposals.ts`, `app/proposals/page.tsx` |
-| **Starred-courses-only scope** | ✅ Done | `favoriteCourses()` in `lib/sync.ts`, `courseScope` in `/api/status`, the `CourseScope` footnote in `app/page.tsx` |
-| **Syllabus PDFs read and transcribed** | ✅ Done | `syllabusFileRef` / `pdfToText` in `lib/extract/syllabus.ts`, `resolveSyllabus` in `lib/sync.ts`, `courses.syllabus_text` / `syllabus_source` |
-| **Course detail page** (syllabus viewer, weights, exams, office hours, late policy) | ✅ Done | `app/courses/[id]/page.tsx`, `app/api/courses/[id]/route.ts` |
-| **GFM chat/briefing formatting** | ✅ Done | `app/components/Markdown.tsx` (`remark-gfm`), `.prose-chat` in `globals.css` |
-| **Parallel Canvas sync** | ✅ Done | `mapLimit` + `CANVAS_CONCURRENCY` in `lib/sync.ts`, 24 h instructor TTL |
+| Assignment reminders (upcoming / missing) | Done | `lib/tools/index.ts` (`get_upcoming_assignments`, `get_missing_assignments`), `app/page.tsx`, `lib/briefing.ts` |
+| Announcements → calendar proposals | Done | `lib/extract/announcement.ts`, `processNewAnnouncements()` in `lib/sync.ts` |
+| Missed assignment → drafted instructor message | Done | `propose_message` tool + `lib/proposals.ts` |
+| Syllabus reading (office hours, late policy, weights, exam dates) | Done | `lib/extract/syllabus.ts`, `extractNewSyllabi()` in `lib/sync.ts` |
+| Office hours → calendar + "when am I free for office hours" | Done | `find_office_hours_slot`, syllabus-driven `calendar_create` proposals |
+| Daily briefing | Done (Discord only) | `lib/briefing.ts`, `instrumentation.ts` cron |
+| Weekly workload forecast + study plan packing | Done | `lib/forecast.ts`, `app/forecast/page.tsx` |
+| Natural-language chat over everything | Done | `app/api/chat/route.ts` + shared tool set |
+| Human-in-the-loop proposals inbox | Done | `lib/proposals.ts`, `app/proposals/page.tsx` |
+| **Starred-courses-only scope** | Done | `favoriteCourses()` in `lib/sync.ts`, `courseScope` in `/api/status`, the `CourseScope` footnote in `app/page.tsx` |
+| **Syllabus PDFs read and transcribed** | Done | `syllabusFileRef` / `pdfToText` in `lib/extract/syllabus.ts`, `resolveSyllabus` in `lib/sync.ts`, `courses.syllabus_text` / `syllabus_source` |
+| **Course detail page** (syllabus viewer, weights, exams, office hours, late policy) | Done | `app/courses/[id]/page.tsx`, `app/api/courses/[id]/route.ts` |
+| **GFM chat/briefing formatting** | Done | `app/components/Markdown.tsx` (`remark-gfm`), `.prose-chat` in `globals.css` |
+| **Parallel Canvas sync** | Done | `mapLimit` + `CANVAS_CONCURRENCY` in `lib/sync.ts`, 24 h instructor TTL |
 
 ## 2. What is **not** implemented
 
 | Planned feature | Status | Notes |
 |---|---|---|
-| **Grade "what-if" calculator** | ❌ Not started | `courses.grading_weights` is extracted from the syllabus but never used for math. No assignment groups, no per-course grade, no solver. |
-| **Late-policy-aware prioritization** | ❌ Not started | `courses.late_policy` is stored as free text only. No structured penalty model, no "expected grade loss per hour of delay" ranking. |
-| **Syllabus vs Canvas discrepancy detector** | ❌ Not started | `courses.exam_dates` is extracted and then never compared to anything. |
-| **Conflict detection** (two exams one day, assignment due during an event) | ❌ Not started | Calendar events are stored but only used as *busy* blocks by the planner. |
-| **Grade posted / grade drop alerts** | ❌ Not started | `assignments.score` is synced but never diffed across syncs. |
-| **Module digest** (pages/files/PDF slides → summary, flashcards) | ❌ Not started | No `modules` or `pages` endpoints wrapped. Note the file plumbing now *does* exist — `getFile` / `downloadFile` in `lib/canvas/api.ts` and `pdfToText` in `lib/extract/syllabus.ts` — so this got noticeably cheaper. |
-| **Quiz prep** | ❌ Not started | No `quizzes` endpoint wrapped. |
-| **Rubric → checklist** | ❌ Not started | No rubric data pulled. |
-| **Feedback digest** (submission comments + rubric assessments) | ❌ Not started | No submission comments pulled. |
-| **Extension request drafting** (pre-deadline, late-policy aware) | ❌ Not started | The generic `propose_message` tool exists, but there is no pre-deadline flow. This is the top line of `to-do.md` — Part 1 delivers it. |
-| **Discussion board assistant** | ❌ Not started | No `discussion_topics` endpoint. |
-| **Group project coordinator** | ❌ Not started | No Groups API. |
-| **Peer review reminders** | ❌ Not started | No peer-review endpoint. |
-| **Semester heatmap of crunch weeks** | ⚠️ Partial | Forecast covers 3 weeks with a per-day bar chart; no semester-wide view. |
-| **Briefing via SMS / email** | ⚠️ Partial | Discord webhook only. |
-| **Office-hours visit with pre-drafted question** | ⚠️ Partial | Slot matching works; the question draft does not exist. |
-| **Export calendar to Google Calendar / ICS** | ❌ Not started | — |
+| **Grade "what-if" calculator** | Not started | `courses.grading_weights` is extracted from the syllabus but never used for math. No assignment groups, no per-course grade, no solver. |
+| **Late-policy-aware prioritization** | Not started | `courses.late_policy` is stored as free text only. No structured penalty model, no "expected grade loss per hour of delay" ranking. |
+| **Syllabus vs Canvas discrepancy detector** | Not started | `courses.exam_dates` is extracted and then never compared to anything. |
+| **Conflict detection** (two exams one day, assignment due during an event) | Not started | Calendar events are stored but only used as *busy* blocks by the planner. |
+| **Grade posted / grade drop alerts** | Not started | `assignments.score` is synced but never diffed across syncs. |
+| **Module digest** (pages/files/PDF slides → summary, flashcards) | Not started | No `modules` or `pages` endpoints wrapped. Note the file plumbing now *does* exist — `getFile` / `downloadFile` in `lib/canvas/api.ts` and `pdfToText` in `lib/extract/syllabus.ts` — so this got noticeably cheaper. |
+| **Quiz prep** | Not started | No `quizzes` endpoint wrapped. |
+| **Rubric → checklist** | Not started | No rubric data pulled. |
+| **Feedback digest** (submission comments + rubric assessments) | Not started | No submission comments pulled. |
+| **Extension request drafting** (pre-deadline, late-policy aware) | Not started | The generic `propose_message` tool exists, but there is no pre-deadline flow. This is the top line of `to-do.md` — Part 1 delivers it. |
+| **Discussion board assistant** | Not started | No `discussion_topics` endpoint. |
+| **Group project coordinator** | Not started | No Groups API. |
+| **Peer review reminders** | Not started | No peer-review endpoint. |
+| **Semester heatmap of crunch weeks** | Partial | Forecast covers 3 weeks with a per-day bar chart; no semester-wide view. |
+| **Briefing via SMS / email** | Partial | Discord webhook only. |
+| **Office-hours visit with pre-drafted question** | Partial | Slot matching works; the question draft does not exist. |
+| **Export calendar to Google Calendar / ICS** | Not started | — |
 
 Also open, from `to-do.md` / `personal-to-do.md` and deliberately **not** part of anyone's plan (they're yours, and they touch frozen files): chat persistence across tab changes, user-supplied Canvas token / Discord webhook / university selection, the syllabus file-picking heuristics, briefing speed, Gradescope.
 
