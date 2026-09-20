@@ -25,6 +25,8 @@ export interface CanvasCourse {
   start_at?: string | null;
   end_at?: string | null;
   access_restricted_by_date?: boolean;
+  /** Present with include[]=favorites. True if the student starred the course in Canvas. */
+  is_favorite?: boolean;
 }
 
 export interface CanvasTab {

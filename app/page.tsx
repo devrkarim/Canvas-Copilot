@@ -7,6 +7,7 @@ import { Button, Card, Empty, Pill, fmt } from "./components/ui";
 interface Status {
   canvasConfigured: boolean; llmConfigured: boolean; discordConfigured: boolean; timezone: string;
   me: string | null; lastSync: string | null;
+  courseScope: { favoritesSet: boolean; hidden: number; total: number; canvasCoursesUrl: string | null };
   counts: { courses: number; assignments: number; announcements: number; officeHours: number; pendingProposals: number; missing: number };
 }
 interface Dash {
@@ -54,8 +55,11 @@ export default function Dashboard() {
     setBusy("sync"); setMsg(null);
     const r = await fetch("/api/sync", { method: "POST" });
     const j = await r.json();
+    const scope = !j.favoritesSet
+      ? `Synced all ${j.courses} courses (none are starred in Canvas)`
+      : `Synced ${j.courses} starred course${j.courses === 1 ? "" : "s"}${j.coursesHidden ? `, skipped ${j.coursesHidden} un-starred` : ""}`;
     setMsg(r.ok
-      ? `Synced ${j.courses} courses, ${j.assignments} assignments, ${j.announcements} announcements (${j.newAnnouncements} new), ${j.calendarEvents} events. ${j.syllabiExtracted} syllabi read, ${j.proposalsCreated} proposals created.${j.warnings?.length ? ` Warnings: ${j.warnings.join("; ")}` : ""}`
+      ? `${scope}, ${j.assignments} assignments, ${j.announcements} announcements (${j.newAnnouncements} new), ${j.calendarEvents} events. ${j.syllabiExtracted} syllabi read, ${j.proposalsCreated} proposals created.${j.warnings?.length ? ` Warnings: ${j.warnings.join("; ")}` : ""}`
       : `Sync failed: ${j.error}`);
     setBusy(null); load();
   }
@@ -190,9 +194,47 @@ export default function Dashboard() {
             ))}
           </ul>
         )}
+        <CourseScope status={status} shown={dash?.courses.length ?? 0} />
       </Card>
 
       <p className="text-xs text-zinc-400">Today is {today.toLocaleDateString("en-US", { timeZone: tz, dateStyle: "full" })} · timezone {tz}</p>
     </div>
+  );
+}
+
+/**
+ * The one place that explains the app's scope: Canvas Copilot reads only the
+ * courses starred on the Canvas dashboard. Sits under the course list as a quiet
+ * footnote rather than a banner, so it stays true without nagging.
+ */
+function CourseScope({ status, shown }: { status: Status | null; shown: number }) {
+  if (!status?.lastSync) return null;
+  const { favoritesSet, hidden, canvasCoursesUrl, total } = status.courseScope;
+  const star = <span className="text-amber-500">★</span>;
+  const link = canvasCoursesUrl && (
+    <a href={canvasCoursesUrl} target="_blank" rel="noreferrer" className="underline hover:text-zinc-600 dark:hover:text-zinc-300">
+      Star courses in Canvas →
+    </a>
+  );
+
+  return (
+    <p className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-xs text-zinc-500">
+      {!favoritesSet ? (
+        <>
+          {star} You haven&apos;t starred any courses in Canvas, so all {total} are included.
+          Canvas Copilot follows your stars — star the ones you care about to narrow this down. {link}
+        </>
+      ) : hidden > 0 ? (
+        <>
+          {star} Showing your {shown} starred Canvas course{shown === 1 ? "" : "s"} · {hidden} hidden.
+          Canvas Copilot only reads starred courses. {link}
+        </>
+      ) : (
+        <>
+          {star} Showing all {shown} of your starred Canvas courses. Canvas Copilot only reads
+          starred courses — un-star one in Canvas and it disappears here on the next sync. {link}
+        </>
+      )}
+    </p>
   );
 }
