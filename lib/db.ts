@@ -17,8 +17,24 @@ export function db(): Database.Database {
   const conn = new Database(DB_PATH);
   conn.pragma("journal_mode = WAL");
   conn.exec(SCHEMA);
+  migrate(conn);
   globalForDb.__db = conn;
   return conn;
+}
+
+/** Columns added after the first release. `CREATE TABLE IF NOT EXISTS` won't add them. */
+const ADDED_COLUMNS: Array<[table: string, column: string, decl: string]> = [
+  ["courses", "syllabus_text", "TEXT"],
+  ["courses", "syllabus_source", "TEXT"],
+];
+
+function migrate(conn: Database.Database) {
+  for (const [table, column, decl] of ADDED_COLUMNS) {
+    const cols = conn.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some((c) => c.name === column)) {
+      conn.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`).run();
+    }
+  }
 }
 
 const SCHEMA = `
@@ -35,6 +51,8 @@ CREATE TABLE IF NOT EXISTS courses (
   term_end TEXT,
   syllabus_body TEXT,
   syllabus_available INTEGER NOT NULL DEFAULT 0,
+  syllabus_text TEXT,              -- readable syllabus prose (from the tab, or a linked PDF)
+  syllabus_source TEXT,            -- html | pdf | link_only | none
   syllabus_extracted_at TEXT,
   instructor_name TEXT,
   instructor_email TEXT,
@@ -151,6 +169,28 @@ export function setPref(key: string, value: string) {
 
 // ---------- row types ----------
 
+/**
+ * Where a course's readable syllabus came from. `link_only` is the honest answer
+ * for a Syllabus tab that holds nothing but an attachment we couldn't read —
+ * previously indistinguishable from a real syllabus.
+ */
+export type SyllabusSource = "html" | "pdf" | "link_only" | "none";
+
+/** True when we hold actual syllabus prose, not just a pointer to a file. */
+export function syllabusReadable(source: SyllabusSource | null): boolean {
+  return source === "html" || source === "pdf";
+}
+
+/**
+ * Whether a course's syllabus is actually usable. `syllabus_available` only ever
+ * meant "the Syllabus tab had some HTML", which is true even when that HTML is
+ * just a link to a PDF — prefer `syllabus_source`, falling back for rows synced
+ * before it existed.
+ */
+export function courseHasSyllabus(c: Pick<CourseRow, "syllabus_source" | "syllabus_available">): boolean {
+  return c.syllabus_source ? syllabusReadable(c.syllabus_source) : Boolean(c.syllabus_available);
+}
+
 export interface CourseRow {
   id: number;
   name: string;
@@ -159,6 +199,8 @@ export interface CourseRow {
   term_end: string | null;
   syllabus_body: string | null;
   syllabus_available: number;
+  syllabus_text: string | null;
+  syllabus_source: SyllabusSource | null;
   syllabus_extracted_at: string | null;
   instructor_name: string | null;
   instructor_email: string | null;

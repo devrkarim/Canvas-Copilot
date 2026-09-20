@@ -89,6 +89,18 @@ export interface CanvasCalendarEvent {
   type?: "event" | "assignment";
 }
 
+export interface CanvasFile {
+  id: number;
+  display_name: string;
+  filename: string;
+  "content-type": string;
+  size: number;
+  /** Short-lived signed download URL. Empty when the file is locked. */
+  url: string;
+  updated_at: string | null;
+  locked_for_user?: boolean;
+}
+
 export interface CanvasEnrollmentUser extends CanvasUser {
   enrollments?: Array<{ type: string; role: string }>;
 }

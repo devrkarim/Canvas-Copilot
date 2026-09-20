@@ -6,7 +6,7 @@ import { z } from "zod";
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { convert } from "html-to-text";
 import {
-  db, getPref, createProposal, listProposals,
+  db, getPref, createProposal, listProposals, courseHasSyllabus, syllabusReadable,
   type AssignmentRow, type AnnouncementRow, type CalendarEventRow, type CourseRow, type OfficeHoursRow, type StudyBlockRow,
 } from "@/lib/db";
 import { buildForecast, freeSlots, type Interval } from "@/lib/forecast";
@@ -60,7 +60,8 @@ const getCourses = betaZodTool({
       courses().map((c) => ({
         id: c.id, code: c.course_code, name: c.name, term: c.term_name, term_end: c.term_end,
         instructor: c.instructor_name, instructor_email: c.instructor_email,
-        syllabus_available: Boolean(c.syllabus_available),
+        syllabus_available: courseHasSyllabus(c),
+        syllabus_source: c.syllabus_source,
         late_policy: c.late_policy, grading_weights: c.grading_weights ? JSON.parse(c.grading_weights) : null,
         exam_dates: c.exam_dates ? JSON.parse(c.exam_dates) : null,
       })),
@@ -177,14 +178,20 @@ const getSyllabus = betaZodTool({
   run: async ({ course }) => {
     const c = findCourse(course);
     if (!c) return `No course matches "${course}". Call get_courses to see options.`;
-    if (!c.syllabus_available || !c.syllabus_body) {
+    if (c.syllabus_source === "link_only") {
+      return `${courseLabel(c)}'s Syllabus tab is only a link to an attachment that couldn't be read (wrong file type, locked, or too large), so I don't have its policies.`;
+    }
+    // Falls back to the raw tab HTML for rows synced before syllabus_text existed.
+    const text = c.syllabus_text ?? (c.syllabus_body ? convert(c.syllabus_body, { wordwrap: false }) : "");
+    if (!syllabusReadable(c.syllabus_source) && !text) {
       return `${courseLabel(c)} has no Syllabus tab content in Canvas, so I can't read its policies.`;
     }
     return json({
       course: courseLabel(c),
+      source: c.syllabus_source === "pdf" ? "syllabus PDF attached to the Syllabus tab" : "Syllabus tab",
       late_policy: c.late_policy, grading_weights: c.grading_weights ? JSON.parse(c.grading_weights) : null,
       exam_dates: c.exam_dates ? JSON.parse(c.exam_dates) : null,
-      syllabus_text: convert(c.syllabus_body, { wordwrap: false }).slice(0, 12000),
+      syllabus_text: text.slice(0, 12000),
     });
   },
 });
@@ -201,7 +208,7 @@ const getOfficeHours = betaZodTool({
       .all(...(c ? [c.id] : [])) as OfficeHoursRow[];
     if (rows.length === 0) {
       return c
-        ? `No office hours found in the ${courseLabel(c)} syllabus${c.syllabus_available ? "" : " (no syllabus tab)"}.`
+        ? `No office hours found in the ${courseLabel(c)} syllabus${courseHasSyllabus(c) ? "" : c.syllabus_source === "link_only" ? " (its Syllabus tab is only an unreadable attachment)" : " (no syllabus tab)"}.`
         : "No office hours have been extracted yet. Run a sync, or the syllabi may not list them.";
     }
     const byId = new Map(courses().map((x) => [x.id, x]));
@@ -362,7 +369,7 @@ export const allTools = [...readTools, ...writeTools];
 export function studentContext(): string {
   const name = getPref("me_name") ?? "the student";
   const lastSync = getPref("last_sync");
-  const list = courses().map((c) => `- ${c.course_code ?? ""} ${c.name} (id ${c.id})${c.instructor_name ? `, instructor ${c.instructor_name}` : ""}${c.syllabus_available ? "" : ", no syllabus tab"}`).join("\n");
+  const list = courses().map((c) => `- ${c.course_code ?? ""} ${c.name} (id ${c.id})${c.instructor_name ? `, instructor ${c.instructor_name}` : ""}${courseHasSyllabus(c) ? "" : c.syllabus_source === "link_only" ? ", syllabus attachment unreadable" : ", no syllabus tab"}`).join("\n");
   const now = new Date();
   const hidden = Number(getPref("courses_hidden") ?? 0);
   const favoritesSet = getPref("favorites_set") !== "0";

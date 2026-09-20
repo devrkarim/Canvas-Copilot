@@ -3,7 +3,7 @@
  * Read calls here are only invoked by /api/sync and the proposal executor —
  * the LLM tools read from SQLite so chat stays fast and rate limits stay low.
  */
-import { canvasGet, canvasGetAll, canvasPost, canvasPut } from "./client";
+import { CanvasError, canvasGet, canvasGetAll, canvasPost, canvasPut } from "./client";
 import type {
   CanvasAnnouncement,
   CanvasAssignment,
@@ -11,6 +11,7 @@ import type {
   CanvasConversation,
   CanvasCourse,
   CanvasEnrollmentUser,
+  CanvasFile,
   CanvasTab,
   CanvasUser,
 } from "./types";
@@ -39,6 +40,23 @@ export const listInstructors = (courseId: number) =>
     enrollment_type: ["teacher", "ta"],
     include: ["email", "enrollments"],
   });
+
+// ---------- files ----------
+
+/**
+ * Metadata for a course file. Callers pass ids parsed out of syllabus HTML, so
+ * the path is rebuilt here from integers only — an absolute URL lifted from that
+ * HTML is never fetched with our token.
+ */
+export const getFile = (courseId: number, fileId: number) =>
+  canvasGet<CanvasFile>(`/api/v1/courses/${courseId}/files/${fileId}`);
+
+/** Download file bytes from the signed `url` on a CanvasFile. Sends no credentials. */
+export async function downloadFile(url: string): Promise<Uint8Array> {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new CanvasError(`file download failed: ${res.status}`, res.status);
+  return new Uint8Array(await res.arrayBuffer());
+}
 
 // ---------- assignments ----------
 export const listAssignments = (courseId: number) =>

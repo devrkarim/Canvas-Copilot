@@ -5,8 +5,9 @@
  */
 import { addDays, subDays, formatISO } from "date-fns";
 import * as canvas from "@/lib/canvas/api";
-import { db, nowIso, setPref, getPref, createProposal, proposalExists, type AssignmentRow, type CourseRow } from "@/lib/db";
-import { extractSyllabus } from "@/lib/extract/syllabus";
+import { canvasBaseUrl } from "@/lib/canvas/client";
+import { db, nowIso, setPref, getPref, createProposal, proposalExists, type AssignmentRow, type CourseRow, type SyllabusSource } from "@/lib/db";
+import { extractSyllabus, pdfToText, syllabusFileRef, syllabusToText, tabIsPointer } from "@/lib/extract/syllabus";
 import { extractActions, type AnnouncementAction } from "@/lib/extract/announcement";
 import { llmConfigured } from "@/lib/llm";
 import { occurrenceRange, weeksUntil, zonedToUtc, TZ, dayName } from "@/lib/time";
@@ -22,6 +23,8 @@ export interface SyncReport {
   newAnnouncements: number;
   calendarEvents: number;
   syllabiExtracted: number;
+  /** Syllabi read out of a linked PDF rather than the Syllabus tab's own HTML. */
+  syllabiFromPdf: number;
   proposalsCreated: number;
   warnings: string[];
 }
@@ -45,7 +48,7 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
   const report: SyncReport = {
     courses: 0, coursesHidden: 0, favoritesSet: true,
     assignments: 0, announcements: 0, newAnnouncements: 0,
-    calendarEvents: 0, syllabiExtracted: 0, proposalsCreated: 0, warnings: [],
+    calendarEvents: 0, syllabiExtracted: 0, syllabiFromPdf: 0, proposalsCreated: 0, warnings: [],
   };
   const conn = db();
   const ts = nowIso();
@@ -230,6 +233,75 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
 
 // ---------------------------------------------------------------------------
 
+/** A Syllabus tab that's only a link to a file is worthless above this size. */
+const MAX_SYLLABUS_PDF_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Turn a course's Syllabus tab into readable prose.
+ *
+ * Canvas returns the tab's HTML, which for most courses is nothing but a link to
+ * a PDF. When that's the case, follow the link, download the file and transcribe
+ * it, so everything downstream — fact extraction, `get_syllabus` in chat — sees
+ * the actual syllabus instead of a filename.
+ *
+ * `fingerprint` covers the linked file's identity and mtime so a re-uploaded PDF
+ * triggers a re-read even when the surrounding HTML never changes — and so an
+ * unchanged one is served from `syllabus_text` instead of being transcribed again
+ * on every sync. Only a previous *successful* PDF read is reused; `link_only`
+ * retries, in case the failure was transient.
+ */
+export async function resolveSyllabus(
+  course: Pick<CourseRow, "id" | "syllabus_body" | "syllabus_text" | "syllabus_source">,
+  previousFingerprint: string | null,
+  warn: (message: string) => void,
+): Promise<{ text: string; source: SyllabusSource; fingerprint: string }> {
+  const html = course.syllabus_body ?? "";
+  const htmlText = syllabusToText(html);
+  const plain = { text: htmlText, source: (htmlText.length >= 40 ? "html" : "none") as SyllabusSource, fingerprint: simpleHash(html) };
+  if (!html.trim()) return { text: "", source: "none", fingerprint: simpleHash(html) };
+
+  // A tab with real prose IS the syllabus; any file it links to is supplementary
+  // reading, not the document we're after.
+  const ref = tabIsPointer(htmlText) ? syllabusFileRef(html, canvasBaseUrl()) : null;
+  if (!ref) return plain;
+
+  // Anything below this point still has a file link, so "html" is never the
+  // honest answer — either we read the file or we admit we couldn't.
+  const linkOnly = (fingerprint: string) => ({ text: htmlText, source: "link_only" as SyllabusSource, fingerprint });
+  try {
+    const file = await canvas.getFile(ref.courseId, ref.fileId);
+    const fingerprint = simpleHash(`${html}|${file.id}|${file.updated_at}|${file.size}`);
+
+    // Same file as last time and we already read it — don't pay to transcribe again.
+    if (fingerprint === previousFingerprint && course.syllabus_source === "pdf" && course.syllabus_text) {
+      return { text: course.syllabus_text, source: "pdf", fingerprint };
+    }
+    if (file["content-type"] !== "application/pdf") {
+      warn(`syllabus attachment for course ${course.id} is ${file["content-type"]}, not a PDF`);
+      return linkOnly(fingerprint);
+    }
+    if (file.locked_for_user || !file.url) {
+      warn(`syllabus PDF for course ${course.id} is locked`);
+      return linkOnly(fingerprint);
+    }
+    if (file.size > MAX_SYLLABUS_PDF_BYTES) {
+      warn(`syllabus PDF for course ${course.id} is ${(file.size / 1e6).toFixed(1)} MB — too large to read`);
+      return linkOnly(fingerprint);
+    }
+
+    const pdfText = await pdfToText(file.display_name, await canvas.downloadFile(file.url));
+    if (!pdfText) {
+      warn(`could not transcribe ${file.display_name}`);
+      return linkOnly(fingerprint);
+    }
+    // Keep the tab's own prose: instructors sometimes add notes alongside the link.
+    return { text: [htmlText, pdfText].filter(Boolean).join("\n\n"), source: "pdf", fingerprint };
+  } catch (e) {
+    warn(`syllabus file for course ${course.id}: ${(e as Error).message}`);
+    return linkOnly(simpleHash(html));
+  }
+}
+
 async function extractNewSyllabi(report: SyncReport): Promise<number> {
   const conn = db();
   const courses = conn
@@ -237,15 +309,22 @@ async function extractNewSyllabi(report: SyncReport): Promise<number> {
     .all() as CourseRow[];
   let count = 0;
   const meId = getPref("me_id");
+  const warn = (m: string) => report.warnings.push(m);
+  const saveText = conn.prepare("UPDATE courses SET syllabus_text = ?, syllabus_source = ? WHERE id = ?");
 
   for (const c of courses) {
-    // Re-extract only if the syllabus text changed since last time.
-    const hash = simpleHash(c.syllabus_body ?? "");
-    if (getPref(`syllabus_hash:${c.id}`) === hash) continue;
-
     try {
+      const previous = getPref(`syllabus_hash:${c.id}`);
+      const { text, source, fingerprint } = await resolveSyllabus(c, previous, warn);
+      saveText.run(text || null, source, c.id);
+      if (source === "pdf") report.syllabiFromPdf++;
+
+      // Re-extract only if the syllabus (tab text or linked file) changed.
+      if (previous === fingerprint) continue;
+      const hash = fingerprint;
+
       const termYear = c.term_end ? new Date(c.term_end).getFullYear() : new Date().getFullYear();
-      const facts = await extractSyllabus(c.name, c.syllabus_body ?? "", termYear);
+      const facts = await extractSyllabus(c.name, text, termYear);
       if (!facts) continue;
 
       conn
