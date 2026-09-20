@@ -60,8 +60,10 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
     <div className="space-y-4">
       <Back />
 
-      <div>
-        <h1 className="text-xl font-semibold">{course.code ?? ""} {course.name}</h1>
+      <div className="page-heading">
+        <div>
+        {course.code && <p className="eyebrow">{course.code}</p>}
+        <h1>{course.name}</h1>
         <p className="text-sm text-zinc-500 mt-1">
           {course.instructor ? (
             course.instructorEmail
@@ -71,6 +73,7 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
           {course.term ? ` · ${course.term}` : ""}
           {course.canvasUrl && <> · <a href={course.canvasUrl} target="_blank" rel="noreferrer" className="underline">Open in Canvas →</a></>}
         </p>
+        </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -83,8 +86,8 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                     <span>{w.name}</span>
                     <span className="text-zinc-500 tabular-nums">{w.percent}%</span>
                   </div>
-                  <div className="mt-1 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
-                    <div className="h-full rounded-full bg-zinc-400 dark:bg-zinc-500" style={{ width: `${Math.min(100, Math.max(0, w.percent))}%` }} />
+                  <div className="mt-1 h-1.5 rounded-xs bg-zinc-100 dark:bg-zinc-800">
+                    <div className="h-full rounded-xs bg-teal-600 dark:bg-teal-400" style={{ width: `${Math.min(100, Math.max(0, w.percent))}%` }} />
                   </div>
                 </li>
               ))}
