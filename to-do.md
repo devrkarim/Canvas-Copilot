@@ -2,6 +2,7 @@
 - fix sync button slow
 - add extension feature
 - finish up plume submission
+- chatbot resetting when changing tabs (implement persistence)
 
 - syllabus just grabs the first file link and trusts a 1,500-character length threshold.
     - prefer a link whose filename contains "syllabus" when there are several — free, no model.
