@@ -101,7 +101,7 @@ export default function Dashboard() {
       </section>
 
       {status && (!status.canvasConfigured || !status.llmConfigured) && (
-        <details className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-4 text-sm">
+        <details className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-4 text-sm">
           <summary className="font-medium">Finish setup to enable {status.canvasConfigured ? "AI features" : "Canvas sync"}</summary>
           <div className="mt-3 space-y-2">
           {!status.canvasConfigured && <p>Set <code>CANVAS_BASE_URL</code> and <code>CANVAS_TOKEN</code> in <code>.env.local</code>, then restart.</p>}
@@ -109,10 +109,10 @@ export default function Dashboard() {
           </div>
         </details>
       )}
-      {msg && <div role="status" className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
+      {msg && <div role="status" className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
 
       {status && status.counts.pendingProposals > 0 && (
-        <Link href="/proposals" className="block rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3 text-sm">
+        <Link href="/proposals" className="block rounded-md border border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3 text-sm">
           <b>{status.counts.pendingProposals}</b> change{status.counts.pendingProposals === 1 ? "" : "s"} to review <span className="float-right font-medium">View proposals →</span>
         </Link>
       )}

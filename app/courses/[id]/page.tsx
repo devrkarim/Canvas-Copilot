@@ -86,8 +86,8 @@ export default function CoursePage({ params }: { params: Promise<{ id: string }>
                     <span>{w.name}</span>
                     <span className="text-zinc-500 tabular-nums">{w.percent}%</span>
                   </div>
-                  <div className="mt-1 h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800">
-                    <div className="h-full rounded-full bg-teal-600 dark:bg-teal-400" style={{ width: `${Math.min(100, Math.max(0, w.percent))}%` }} />
+                  <div className="mt-1 h-1.5 rounded-xs bg-zinc-100 dark:bg-zinc-800">
+                    <div className="h-full rounded-xs bg-teal-600 dark:bg-teal-400" style={{ width: `${Math.min(100, Math.max(0, w.percent))}%` }} />
                   </div>
                 </li>
               ))}

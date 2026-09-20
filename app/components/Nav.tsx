@@ -24,7 +24,7 @@ export function Nav() {
               key={l.href}
               href={l.href}
               aria-current={path === l.href || (l.href === "/" && path.startsWith("/courses/")) ? "page" : undefined}
-              className={`px-3 sm:px-4 py-2.5 rounded-xl font-medium transition-colors ${
+              className={`px-3 sm:px-4 py-2.5 rounded-md font-medium transition-colors ${
                 path === l.href || (l.href === "/" && path.startsWith("/courses/"))
                   ? "bg-teal-700 text-white dark:bg-teal-400 dark:text-zinc-950"
                   : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"

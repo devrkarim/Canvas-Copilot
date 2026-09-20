@@ -59,7 +59,7 @@ export default function ForecastPage() {
         <div><p className="eyebrow">Make room to focus</p><h1>Your week</h1><p className="text-sm text-zinc-500 dark:text-zinc-400 mt-3">See your workload. Find time to study.</p></div>
         <div className="flex gap-1 text-sm">
           {[0, 1, 2].map((w) => (
-            <button key={w} aria-pressed={week === w} onClick={() => setWeek(w)} className={`px-3 py-2.5 rounded-xl ${week === w ? "bg-teal-700 text-white dark:bg-teal-400 dark:text-zinc-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
+            <button key={w} aria-pressed={week === w} onClick={() => setWeek(w)} className={`px-3 py-2.5 rounded-md ${week === w ? "bg-teal-700 text-white dark:bg-teal-400 dark:text-zinc-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
               {w === 0 ? "This week" : w === 1 ? "Next week" : "In 2 weeks"}
             </button>
           ))}
@@ -69,11 +69,11 @@ export default function ForecastPage() {
           <Button onClick={addToCalendar} disabled={loading || !data?.blocks.length}>Propose study plan</Button>
         </div>
       </div>
-      {msg && <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
+      {msg && <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
 
       {data && (
         <>
-          <div className={`rounded-lg p-3 text-sm border ${data.overloaded ? "border-red-300 bg-red-50 dark:bg-red-950 dark:border-red-800" : "border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800"}`}>
+          <div className={`rounded-md p-3 text-sm border ${data.overloaded ? "border-red-300 bg-red-50 dark:bg-red-950 dark:border-red-800" : "border-green-300 bg-green-50 dark:bg-green-950 dark:border-green-800"}`}>
             <p className="font-medium mb-1">{new Date(data.weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {new Date(data.weekEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</p>
             <b>{data.totalEstimatedHours}h</b> estimated · <b>{data.totalFreeHours}h</b> available.
             <p className="mt-1">{data.overloaded ? "A busy week. Consider starting earlier." : "Your study plan fits."}</p>
@@ -98,7 +98,7 @@ export default function ForecastPage() {
               {data.tasks.length === 0 ? <Empty>Nothing due in this window.</Empty> : (
                 <ul className="space-y-2 text-sm">
                   {data.tasks.map((t) => (
-                    <li key={t.assignmentId} className="rounded-lg border border-zinc-100 dark:border-zinc-800 p-2">
+                    <li key={t.assignmentId} className="rounded-md border border-zinc-100 dark:border-zinc-800 p-2">
                       <div className="flex flex-col gap-2">
                         <span><Pill>{t.course}</Pill> {t.name}</span>
                         <span className="text-zinc-500 whitespace-nowrap">{fmt(t.dueAt)}</span>

@@ -128,7 +128,7 @@ function Chat() {
         )}
         {turns.map((t, i) => (
           <div key={i} className={`flex ${t.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`min-w-0 rounded-2xl px-4 py-2.5 text-sm ${
+            <div className={`min-w-0 rounded-md px-4 py-2.5 text-sm ${
               t.role === "user"
                 ? "max-w-[80%] bg-teal-700 text-white dark:bg-teal-900"
                 : "max-w-[92%] bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800"
@@ -164,7 +164,7 @@ function Chat() {
           onChange={(e) => setInput(e.target.value)}
           aria-label="Message to your course assistant"
           placeholder="What can I help with?"
-          className="min-w-0 flex-1 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 text-sm focus:ring-2 focus:ring-teal-500"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 text-sm focus:ring-2 focus:ring-teal-500"
           disabled={busy}
         />
         <Button type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Send"}</Button>

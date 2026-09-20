@@ -25,7 +25,7 @@ export function Button({
   }[variant];
   return (
     <button type={type} onClick={onClick} disabled={disabled}
-      className={`text-sm font-medium px-4 py-2.5 min-h-11 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${styles}`}>
+      className={`text-sm font-medium px-4 py-2.5 min-h-11 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${styles}`}>
       {children}
     </button>
   );
@@ -50,5 +50,5 @@ export function Pill({ children, tone = "zinc" }: { children: ReactNode; tone?: 
     amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
     blue: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
   }[tone];
-  return <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${t}`}>{children}</span>;
+  return <span className={`inline-block text-xs px-2 py-0.5 rounded-sm ${t}`}>{children}</span>;
 }

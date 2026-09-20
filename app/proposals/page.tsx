@@ -49,13 +49,13 @@ export default function ProposalsPage() {
         <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-3">Review changes before they reach Canvas.</p></div>
         <div className="ml-auto flex gap-1 text-sm">
           {(["pending", "all"] as const).map((t) => (
-            <button key={t} aria-pressed={tab === t} onClick={() => setTab(t)} className={`px-4 py-2.5 rounded-xl ${tab === t ? "bg-teal-700 text-white dark:bg-teal-400 dark:text-zinc-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
+            <button key={t} aria-pressed={tab === t} onClick={() => setTab(t)} className={`px-4 py-2.5 rounded-md ${tab === t ? "bg-teal-700 text-white dark:bg-teal-400 dark:text-zinc-950" : "hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}>
               {t === "pending" ? "Pending" : "History"}
             </button>
           ))}
         </div>
       </div>
-      {err && <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950 dark:border-red-800 p-3 text-sm">{err}</div>}
+      {err && <div className="rounded-md border border-red-300 bg-red-50 dark:bg-red-950 dark:border-red-800 p-3 text-sm">{err}</div>}
 
       {items.length === 0 ? <Card title={tab === "pending" ? "All caught up" : "History"}><Empty>{tab === "pending" ? "No changes to review. Sync Canvas or ask in Chat." : "No past proposals."}</Empty></Card> : (
         <div className="space-y-3">
@@ -69,7 +69,7 @@ export default function ProposalsPage() {
               <p className="text-sm mb-3">{p.rationale}</p>
 
               {p.type !== "message" ? (
-                <div className="text-sm rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-3 space-y-1">
+                <div className="text-sm rounded-md bg-zinc-50 dark:bg-zinc-800/60 p-3 space-y-1">
                   <div><b>{String(p.payload.title)}</b></div>
                   <div className="text-zinc-600 dark:text-zinc-400">
                     {fmt(String(p.payload.start_at))} → {fmt(String(p.payload.end_at))}
@@ -98,7 +98,7 @@ export default function ProposalsPage() {
                       />
                     </>
                   ) : (
-                    <div className="rounded-lg bg-zinc-50 dark:bg-zinc-800/60 p-3 whitespace-pre-wrap"><b>{String(p.payload.subject)}</b>{"\n\n"}{String(p.payload.body)}</div>
+                    <div className="rounded-md bg-zinc-50 dark:bg-zinc-800/60 p-3 whitespace-pre-wrap"><b>{String(p.payload.subject)}</b>{"\n\n"}{String(p.payload.body)}</div>
                   )}
                 </div>
               )}
