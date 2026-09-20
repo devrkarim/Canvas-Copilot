@@ -1,4 +1,4 @@
-import { db, type AssignmentRow, type AnnouncementRow, type CourseRow, type OfficeHoursRow } from "@/lib/db";
+import { db, courseHasSyllabus, type AssignmentRow, type AnnouncementRow, type CourseRow, type OfficeHoursRow } from "@/lib/db";
 import { addDaysUtc, TZ, dayName } from "@/lib/time";
 import { convert } from "html-to-text";
 
@@ -31,7 +31,10 @@ export async function GET() {
 
   return Response.json({
     timezone: TZ(),
-    courses: courses.map((c) => ({ id: c.id, code: c.course_code, name: c.name, instructor: c.instructor_name, syllabus: Boolean(c.syllabus_available), latePolicy: c.late_policy })),
+    courses: courses.map((c) => ({
+      id: c.id, code: c.course_code, name: c.name, instructor: c.instructor_name,
+      syllabus: courseHasSyllabus(c), syllabusSource: c.syllabus_source, latePolicy: c.late_policy,
+    })),
     upcoming, missing, announcements, officeHours,
   });
 }

@@ -12,7 +12,7 @@ interface Status {
 }
 interface Dash {
   timezone: string;
-  courses: Array<{ id: number; code: string | null; name: string; instructor: string | null; syllabus: boolean; latePolicy: string | null }>;
+  courses: Array<{ id: number; code: string | null; name: string; instructor: string | null; syllabus: boolean; syllabusSource: "html" | "pdf" | "link_only" | "none" | null; latePolicy: string | null }>;
   upcoming: Array<{ id: number; name: string; course: string; due_at: string | null; points: number | null; url: string | null }>;
   missing: Array<{ id: number; name: string; course: string; due_at: string | null; points: number | null; url: string | null }>;
   announcements: Array<{ id: number; title: string; course: string; posted_at: string | null; text: string; url: string | null; actions: { tldr?: string; actions?: Array<{ kind: string; summary: string }> } | null }>;
@@ -59,7 +59,7 @@ export default function Dashboard() {
       ? `Synced all ${j.courses} courses (none are starred in Canvas)`
       : `Synced ${j.courses} starred course${j.courses === 1 ? "" : "s"}${j.coursesHidden ? `, skipped ${j.coursesHidden} un-starred` : ""}`;
     setMsg(r.ok
-      ? `${scope}, ${j.assignments} assignments, ${j.announcements} announcements (${j.newAnnouncements} new), ${j.calendarEvents} events. ${j.syllabiExtracted} syllabi read, ${j.proposalsCreated} proposals created.${j.warnings?.length ? ` Warnings: ${j.warnings.join("; ")}` : ""}`
+      ? `${scope}, ${j.assignments} assignments, ${j.announcements} announcements (${j.newAnnouncements} new), ${j.calendarEvents} events. ${j.syllabiExtracted} syllabi read${j.syllabiFromPdf ? ` (${j.syllabiFromPdf} from PDF)` : ""}, ${j.proposalsCreated} proposals created.${j.warnings?.length ? ` Warnings: ${j.warnings.join("; ")}` : ""}`
       : `Sync failed: ${j.error}`);
     setBusy(null); load();
   }
@@ -188,7 +188,7 @@ export default function Dashboard() {
             {dash.courses.map((c) => (
               <li key={c.id} className="rounded-lg border border-zinc-100 dark:border-zinc-800 p-2">
                 <div className="font-medium">{c.code ?? ""} {c.name}</div>
-                <div className="text-zinc-500">{c.instructor ?? "instructor unknown"} · {c.syllabus ? "syllabus ✓" : "no syllabus tab"}</div>
+                <div className="text-zinc-500">{c.instructor ?? "instructor unknown"} · {syllabusLabel(c.syllabus, c.syllabusSource)}</div>
                 {c.latePolicy && <div className="text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">Late policy: {c.latePolicy}</div>}
               </li>
             ))}
@@ -200,6 +200,13 @@ export default function Dashboard() {
       <p className="text-xs text-zinc-400">Today is {today.toLocaleDateString("en-US", { timeZone: tz, dateStyle: "full" })} · timezone {tz}</p>
     </div>
   );
+}
+
+/** Says what we actually hold, not just whether the Syllabus tab has any HTML in it. */
+function syllabusLabel(readable: boolean, source: Dash["courses"][number]["syllabusSource"]): string {
+  if (source === "pdf") return "syllabus ✓ (from PDF)";
+  if (source === "link_only") return "syllabus attached, unreadable";
+  return readable ? "syllabus ✓" : "no syllabus tab";
 }
 
 /**
