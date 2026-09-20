@@ -19,10 +19,15 @@ import type {
 export const getMe = () => canvasGet<CanvasUser>("/api/v1/users/self");
 
 // ---------- courses ----------
+/**
+ * Every active course, each tagged with `is_favorite` (the star on the Canvas
+ * dashboard). Sync keeps only the starred ones; the rest are counted so the UI
+ * can say how many are being left out. See `favoriteCourses` in lib/sync.ts.
+ */
 export const listCourses = () =>
   canvasGetAll<CanvasCourse>("/api/v1/courses", {
     enrollment_state: "active",
-    include: ["syllabus_body", "term"],
+    include: ["syllabus_body", "term", "favorites"],
     state: ["available"],
   });
 

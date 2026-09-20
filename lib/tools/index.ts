@@ -364,9 +364,19 @@ export function studentContext(): string {
   const lastSync = getPref("last_sync");
   const list = courses().map((c) => `- ${c.course_code ?? ""} ${c.name} (id ${c.id})${c.instructor_name ? `, instructor ${c.instructor_name}` : ""}${c.syllabus_available ? "" : ", no syllabus tab"}`).join("\n");
   const now = new Date();
+  const hidden = Number(getPref("courses_hidden") ?? 0);
+  const favoritesSet = getPref("favorites_set") !== "0";
+  const scope = !favoritesSet
+    ? "The student has starred no courses in Canvas, so every enrolled course is listed above."
+    : `These are the courses the student starred (favorited) in Canvas — the only ones you can see.` +
+      (hidden > 0
+        ? ` ${hidden} other enrolled course${hidden === 1 ? " is" : "s are"} un-starred and completely invisible to you.`
+        : "") +
+      " If the student asks about a course that isn't listed, tell them to star it in Canvas and re-sync; never guess at its contents.";
   return (
     `Student: ${name}. Timezone: ${TZ()}. Last Canvas sync: ${lastSync ? fmtDateTime(lastSync, TZ()) : "never"}.\n` +
     `Courses:\n${list || "(none synced yet)"}\n` +
+    `${scope}\n` +
     `Current date/time: ${now.toLocaleString("en-US", { timeZone: TZ(), dateStyle: "full", timeStyle: "short" })}.`
   );
 }

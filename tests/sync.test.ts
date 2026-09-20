@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import http from "node:http";
-import { runSync } from "@/lib/sync";
+import { favoriteCourses, runSync } from "@/lib/sync";
 import { db, getPref } from "@/lib/db";
 import { canvasGetAll, CanvasError } from "@/lib/canvas/client";
 
@@ -23,6 +23,8 @@ const courses = Array.from({ length: 12 }, (_, i) => ({
 }));
 
 let dropCourse101 = false;
+/** null = student has starred nothing, so Canvas reports no favorites at all. */
+let favoriteIds: Set<number> | null = null;
 let rateLimitOnce = true;
 const requests: string[] = [];
 let contextCodeMax = 0;
@@ -49,7 +51,11 @@ const server = http.createServer((req, res) => {
       rateLimitOnce = false;
       res.writeHead(403, { "Content-Type": "text/plain" }); return res.end("403 Forbidden (Rate Limit Exceeded)");
     }
-    const list = dropCourse101 ? courses.filter((c) => c.id !== 101) : courses;
+    // Canvas only returns `is_favorite` when include[]=favorites is asked for.
+    const wantsFavorites = url.searchParams.getAll("include[]").includes("favorites");
+    const list = (dropCourse101 ? courses.filter((c) => c.id !== 101) : courses).map((c) =>
+      wantsFavorites && favoriteIds ? { ...c, is_favorite: favoriteIds.has(c.id) } : c,
+    );
     const pages = [list.slice(0, 6), list.slice(6)];
     const next = page === 1 ? `<http://localhost:${port}/api/v1/courses?page=2&per_page=100>; rel="next"` : "";
     return json(pages[page - 1] ?? [], next ? { Link: next } : {});
@@ -61,6 +67,9 @@ const server = http.createServer((req, res) => {
   m = url.pathname.match(/^\/api\/v1\/courses\/(\d+)\/assignments$/);
   if (m) {
     const cid = Number(m[1]);
+    if (cid === 102) return json([
+      { id: 20, course_id: 102, name: "102 homework", published: true, due_at: future(4), points_possible: 20, submission_types: ["online_upload"], html_url: "u" },
+    ]);
     if (cid !== 101) return json([]);
     return json([
       { id: 1, course_id: cid, name: "Unpublished draft", published: false, due_at: future(1), points_possible: 10, submission_types: ["online_upload"], html_url: "u" },
@@ -113,6 +122,19 @@ beforeAll(async () => {
 });
 afterAll(() => server.close());
 
+describe("favoriteCourses", () => {
+  it("keeps only starred courses and counts the rest", () => {
+    const r = favoriteCourses([{ is_favorite: true }, { is_favorite: false }, {}]);
+    expect(r).toEqual({ visible: [{ is_favorite: true }], hidden: 2, favoritesSet: true });
+  });
+
+  it("treats 'nothing starred' as 'everything visible', like Canvas does", () => {
+    const all = [{ is_favorite: false }, {}];
+    expect(favoriteCourses(all)).toEqual({ visible: all, hidden: 0, favoritesSet: false });
+    expect(favoriteCourses([])).toEqual({ visible: [], hidden: 0, favoritesSet: false });
+  });
+});
+
 describe("runSync against mock Canvas", () => {
   it("survives pagination, a rate-limit 403, and >10 context codes", async () => {
     const report = await runSync({ extract: false });
@@ -156,6 +178,43 @@ describe("runSync against mock Canvas", () => {
     expect(db().prepare("SELECT COUNT(*) n FROM courses WHERE id = 101").get()).toEqual({ n: 0 });
     expect(db().prepare("SELECT COUNT(*) n FROM assignments WHERE course_id = 101").get()).toEqual({ n: 0 });
     expect(db().prepare("SELECT COUNT(*) n FROM announcements WHERE course_id = 101").get()).toEqual({ n: 0 });
+  });
+
+  it("syncs only starred courses and counts the rest as hidden", async () => {
+    favoriteIds = new Set([102, 103]);
+    const report = await runSync({ extract: false });
+
+    expect(report.favoritesSet).toBe(true);
+    expect(report.courses).toBe(2);
+    expect(report.coursesHidden).toBe(8); // 10 active (101 dropped, 112 date-restricted)
+    const ids = (db().prepare("SELECT id FROM courses ORDER BY id").all() as { id: number }[]).map((r) => r.id);
+    expect(ids).toEqual([102, 103]);
+    expect(getPref("courses_hidden")).toBe("8");
+    expect(getPref("courses_total")).toBe("10");
+    expect(getPref("favorites_set")).toBe("1");
+    expect(db().prepare("SELECT COUNT(*) n FROM assignments WHERE course_id = 102").get()).toEqual({ n: 1 });
+  });
+
+  it("purges a course's data (and its orphaned forecasts) when it is un-starred", async () => {
+    db().prepare("INSERT INTO forecasts(assignment_id, estimated_hours, difficulty, suggested_start_days_before, updated_at) VALUES(20, 2, 'medium', 2, ?)")
+      .run(new Date().toISOString());
+
+    favoriteIds = new Set([103]);
+    await runSync({ extract: false });
+
+    expect((db().prepare("SELECT id FROM courses").all() as { id: number }[]).map((r) => r.id)).toEqual([103]);
+    expect(db().prepare("SELECT COUNT(*) n FROM assignments WHERE course_id = 102").get()).toEqual({ n: 0 });
+    expect(db().prepare("SELECT COUNT(*) n FROM forecasts WHERE assignment_id = 20").get()).toEqual({ n: 0 });
+  });
+
+  it("falls back to every course when the student has starred nothing", async () => {
+    favoriteIds = null;
+    const report = await runSync({ extract: false });
+
+    expect(report.favoritesSet).toBe(false);
+    expect(report.courses).toBe(10);
+    expect(report.coursesHidden).toBe(0);
+    expect(getPref("favorites_set")).toBe("0");
   });
 
   it("surfaces non-rate-limit HTTP errors as CanvasError with status", async () => {

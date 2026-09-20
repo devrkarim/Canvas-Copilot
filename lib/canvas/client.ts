@@ -136,3 +136,8 @@ export async function canvasPut<T>(path: string, body: unknown): Promise<T> {
 export function canvasConfigured() {
   return Boolean(process.env.CANVAS_BASE_URL && process.env.CANVAS_TOKEN);
 }
+
+/** Origin only, no trailing slash — for linking the student back into Canvas. */
+export function canvasBaseUrl(): string | null {
+  return process.env.CANVAS_BASE_URL?.replace(/\/+$/, "") ?? null;
+}

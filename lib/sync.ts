@@ -13,6 +13,10 @@ import { occurrenceRange, weeksUntil, zonedToUtc, TZ, dayName } from "@/lib/time
 
 export interface SyncReport {
   courses: number;
+  /** Active courses skipped because they aren't starred in Canvas. */
+  coursesHidden: number;
+  /** False when the student has starred nothing, so every course was synced. */
+  favoritesSet: boolean;
   assignments: number;
   announcements: number;
   newAnnouncements: number;
@@ -22,10 +26,25 @@ export interface SyncReport {
   warnings: string[];
 }
 
+/**
+ * The courses Canvas Copilot is allowed to see: the ones starred on the Canvas
+ * dashboard. Canvas itself falls back to "all enrolled courses" when a student
+ * has starred nothing (see GET /users/self/favorites/courses), and we match that
+ * rather than showing an empty app — `favoritesSet: false` tells the UI to say so.
+ */
+export function favoriteCourses<T extends { is_favorite?: boolean }>(
+  courses: T[],
+): { visible: T[]; hidden: number; favoritesSet: boolean } {
+  const starred = courses.filter((c) => c.is_favorite);
+  if (starred.length === 0) return { visible: courses, hidden: 0, favoritesSet: false };
+  return { visible: starred, hidden: courses.length - starred.length, favoritesSet: true };
+}
+
 export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncReport> {
   const extract = opts.extract ?? true;
   const report: SyncReport = {
-    courses: 0, assignments: 0, announcements: 0, newAnnouncements: 0,
+    courses: 0, coursesHidden: 0, favoritesSet: true,
+    assignments: 0, announcements: 0, newAnnouncements: 0,
     calendarEvents: 0, syllabiExtracted: 0, proposalsCreated: 0, warnings: [],
   };
   const conn = db();
@@ -36,8 +55,15 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
   setPref("me_id", String(me.id));
   setPref("me_name", me.name);
 
-  // ---- courses ----
-  const courses = await canvas.listCourses();
+  // ---- courses (starred only) ----
+  const active = (await canvas.listCourses()).filter((c) => !c.access_restricted_by_date);
+  const { visible: courses, hidden, favoritesSet } = favoriteCourses(active);
+  report.coursesHidden = hidden;
+  report.favoritesSet = favoritesSet;
+  setPref("courses_hidden", String(hidden));
+  setPref("courses_total", String(active.length));
+  setPref("favorites_set", favoritesSet ? "1" : "0");
+
   const upsertCourse = conn.prepare(`
     INSERT INTO courses(id, name, course_code, term_name, term_end, syllabus_body, syllabus_available, synced_at)
     VALUES(@id, @name, @course_code, @term_name, @term_end, @syllabus_body, @syllabus_available, @synced_at)
@@ -46,7 +72,6 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
       syllabus_body=excluded.syllabus_body, syllabus_available=excluded.syllabus_available, synced_at=excluded.synced_at
   `);
   for (const c of courses) {
-    if (c.access_restricted_by_date) continue;
     const body = c.syllabus_body?.trim() ?? "";
     upsertCourse.run({
       id: c.id,
@@ -60,9 +85,9 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
     });
     report.courses++;
   }
-  const courseIds = courses.filter((c) => !c.access_restricted_by_date).map((c) => c.id);
+  const courseIds = courses.map((c) => c.id);
 
-  // Drop courses (and their data) that are no longer active for this student.
+  // Drop courses (and their data) the student un-starred or is no longer enrolled in.
   if (courseIds.length > 0) {
     const stale = (conn.prepare("SELECT id FROM courses").all() as { id: number }[])
       .map((r) => r.id)
@@ -70,6 +95,10 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
     for (const id of stale) {
       for (const t of ["assignments", "announcements", "office_hours"]) conn.prepare(`DELETE FROM ${t} WHERE course_id = ?`).run(id);
       conn.prepare("DELETE FROM courses WHERE id = ?").run(id);
+    }
+    // Effort estimates and study blocks hang off assignments that just went away.
+    for (const t of ["forecasts", "study_blocks"]) {
+      conn.prepare(`DELETE FROM ${t} WHERE assignment_id NOT IN (SELECT id FROM assignments)`).run();
     }
   }
 
@@ -130,7 +159,8 @@ export async function runSync(opts: { extract?: boolean } = {}): Promise<SyncRep
   }
   // Re-derive `missing` from scratch before trusting Canvas's list below.
   conn.prepare("UPDATE assignments SET missing = 0 WHERE submitted = 1").run();
-  // Canvas's own "missing" list is authoritative where available.
+  // Canvas's own "missing" list is authoritative where available. It spans every
+  // course, but only updates rows we already store, so un-starred ones stay out.
   try {
     const missing = await canvas.listMissing();
     const mark = conn.prepare("UPDATE assignments SET missing = 1 WHERE id = ?");
