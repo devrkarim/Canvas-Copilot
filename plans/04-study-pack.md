@@ -1,6 +1,10 @@
-# Feature 4 — Module digest, flashcards & quiz prep
+# Part 3 of 3 — Module digest, flashcards & quiz prep
 
 **Owner:** teammate D · **Branch:** `feat/study` · **Depends on:** the scaffold being on `main`. Nothing else, and nobody else.
+
+This file plus §2.5, §3 and §4 of `plans/README.md` is your complete assignment. You will not need to ask anyone anything to finish it.
+
+**Good news before you start:** the hardest part of this feature — downloading a Canvas file and turning a PDF into text — already exists in the repo and is yours to import. See "Content extraction" below. Your predecessor plan assumed you'd write it from scratch; you won't.
 
 ## Before you start
 
@@ -15,17 +19,35 @@ You own exactly these paths and may not create or edit anything else:
 
 ```
 lib/features/study/**   app/study/**   app/api/study/**
-app/components/cards/StudyCard.tsx   scripts/seed-study.ts
-tests/study.test.ts   docs/features/study.md
+app/components/cards/StudyCard.tsx   app/components/course/CourseStudySection.tsx
+scripts/seed-study.ts   tests/study.test.ts   docs/features/study.md
 ```
 
-Run `npm run check:ownership` before every commit; it fails the moment you touch someone else's file. The stubs you're filling in (`lib/features/study/{schema,tools,sync}.ts`) already exist and are already wired into the app — you never edit a registry, a nav bar, `lib/db.ts`, or `package.json`.
+Run `npm run check:ownership` before every commit; it fails the moment you touch someone else's file. The stubs you're filling in (`lib/features/study/{schema,tools,sync}.ts`, both UI components) already exist and are already wired into the app — you never edit a registry, a nav bar, a page, `lib/db.ts`, or `package.json`.
 
-**Read-only dependencies** (import freely, never edit): `@/lib/canvas/client` (`canvasGet`, `canvasGetAll`, `CanvasError`, `canvasConfigured`), `@/lib/db`, `@/lib/time`, `@/lib/llm`, `@/lib/tools/shared`.
+**Read-only dependencies** (import freely, never edit):
+
+| Import | From | Why you need it |
+|---|---|---|
+| `canvasGet`, `canvasGetAll`, `CanvasError`, `canvasConfigured` | `@/lib/canvas/client` | your own endpoint wrappers |
+| `getFile`, `downloadFile` | `@/lib/canvas/api` | **already written** — file metadata + signed-URL download |
+| `pdfToText` | `@/lib/extract/syllabus` | **already written** — PDF → text via a document content block |
+| `mapLimit`, `CANVAS_CONCURRENCY` | `@/lib/sync` | per-course fan-out at the throttle-safe rate |
+| `anthropic`, `parseDefaults`, `MODEL`, `llmConfigured` | `@/lib/llm` | generation |
+| `db`, `getPref` | `@/lib/db` | your tables |
+| `Card`, `Button`, `Pill`, `Empty`, `fmt` | `@/app/components/ui` | UI |
+| `Markdown` | `@/app/components/Markdown` | rendering the digest (GFM tables; plain ReactMarkdown mangles them) |
 
 **Never create:** a shared helper outside your folder, and in particular do **not** add your endpoints to `lib/canvas/api.ts` or your response types to `lib/canvas/types.ts` — both are frozen. Your wrappers and interfaces live in `lib/features/study/canvas.ts`.
 
-Do the Canvas reconnaissance in your first hour (see Risks): if Modules, Files or Quizzes are disabled on the sandbox course, you want to know before you build against them, not after. The feature is designed to demo fully from seed data either way.
+### The four repo facts this feature is built on
+
+1. **Only starred courses exist** (`plans/README.md` §2.5.1). Iterate the `courses` table; never list enrollments. Clean up orphaned rows at the top of your sync hook — `DELETE FROM modules WHERE course_id NOT IN (SELECT id FROM courses)`, and the same for `module_items`, `quizzes`, `study_packs` — mirroring what `runSync` already does for `forecasts` / `study_blocks`.
+2. **Fan out with `mapLimit(ids, CANVAS_CONCURRENCY, …)`**, catching per course so one disabled Modules tab doesn't kill the sync. `lib/sync.ts` is the worked example.
+3. **File download and PDF transcription already exist** — `getFile` / `downloadFile` / `pdfToText`. Don't add a PDF parser, and don't fetch a signed URL with the Canvas bearer token (`downloadFile` deliberately sends no credentials).
+4. **Markdown renders through `<Markdown>`** inside `<div className="prose-chat">`.
+
+Do the Canvas reconnaissance in your first hour (see Risks): if Modules or Quizzes are disabled on the sandbox course, you want to know before you build against them, not after. The feature is designed to demo fully from seed data either way.
 
 ## The pitch
 
@@ -130,14 +152,16 @@ Build on `canvasGet` / `canvasGetAll` from `@/lib/canvas/client`; declare local 
 listModules(courseId)            // /api/v1/courses/:id/modules?include[]=items&include[]=content_details
 listModuleItems(courseId, modId) // /api/v1/courses/:id/modules/:mid/items  (fallback when include[]=items truncates)
 getPage(courseId, pageUrl)       // /api/v1/courses/:id/pages/:url          → { body: html }
-getFile(courseId, fileId)        // /api/v1/courses/:id/files/:fid          → { display_name, content-type, url, size }
 listQuizzes(courseId)            // /api/v1/courses/:id/quizzes
 ```
+
+**You do not write a file wrapper.** `getFile(courseId, fileId)` and `downloadFile(signedUrl)` already exist in `lib/canvas/api.ts` (added for the syllabus-PDF work), and `CanvasFile` is already typed in `lib/canvas/types.ts` — `display_name`, `"content-type"`, `size`, `url`, `updated_at`, `locked_for_user`. Import them.
 
 Notes that will save you an hour:
 - `include[]=items` is capped (Canvas omits items for large modules); if `items` is absent but `items_count > 0`, fall back to `listModuleItems`.
 - Modules are frequently **disabled** for a course → Canvas returns 404/403. Catch `CanvasError`, push a warning, continue. Never let one course kill the sync.
-- File download URLs are pre-signed and returned by the file object — fetch them with plain `fetch`, **not** `canvasGet` (the bearer header is unnecessary and can break the signature).
+- `downloadFile` sends **no** credentials, deliberately: the `url` on a `CanvasFile` is already signed, and adding the bearer token can 401. Don't "fix" that by routing it through `canvasGet`.
+- If you parse file links out of page HTML, extract the `/courses/<n>/files/<n>` ids and pass those to `getFile` rather than fetching the URL you found. `syllabusFileRef` in `lib/extract/syllabus.ts` is the reference implementation, including its same-origin check — a hostile absolute URL in course content must never be fetched with the Canvas token.
 - Classic quizzes live at `/quizzes`; New Quizzes appear as assignments with `submission_types: ["external_tool"]`. If `/quizzes` is empty, fall back to assignments whose name matches `quiz|exam|test` so the feature still has something to prep for.
 
 ## Content extraction (`content.ts`)
@@ -146,14 +170,29 @@ Notes that will save you an hour:
 |---|---|
 | `Page` | `getPage` → `convert(body, { wordwrap: false })` via `html-to-text` (already a dependency) |
 | `Assignment` | reuse `assignments.description` from the core DB — no extra call |
-| `File` (PDF) | fetch the URL → send to the model as a document content block (see below) |
-| `File` (text/markdown/html) | fetch → decode → `convert` when HTML |
+| `File` (PDF) | `getFile` → guards → `downloadFile(file.url)` → `pdfToText(file.display_name, bytes)` |
+| `File` (text/markdown/html) | `downloadFile` → decode → `convert` when HTML |
 | `File` (pptx/docx/other) | mark `text_source = 'unavailable'` and skip — don't sink time into parsers |
 | `ExternalUrl`, `SubHeader`, `Discussion` | title only |
 
 Cap per item at ~20 000 characters and per module at ~60 000; truncate with a marker. Store the result in `module_items.text` with `fetched_at`, so regeneration is free and tests can run with zero network.
 
-**PDFs:** the Anthropic SDK is already a dependency. Send the PDF as a `document` content block (base64 `application/pdf`) in the generation call rather than writing a PDF parser. Cap at ~10 MB and ~50 pages; beyond that, fall back to `text_source = 'unavailable'`. Keep this behind a small, clearly-marked function so it can be stubbed in tests.
+**PDFs are already solved.** `pdfToText(filename, bytes)` in `lib/extract/syllabus.ts` streams the PDF to the model as a base64 `document` content block and returns transcribed text (or `null` on refusal / too-short output). It handles scanned and image-only PDFs, because the model reads the document natively. Do not write a PDF parser, and do not reimplement this — import it.
+
+Copy the guard sequence from `resolveSyllabus` in `lib/sync.ts`, which is the same problem solved once already, in this order:
+
+```ts
+const file = await getFile(courseId, fileId);
+if (file["content-type"] !== "application/pdf") return unavailable("not a PDF");
+if (file.locked_for_user || !file.url)          return unavailable("locked");
+if (file.size > MAX_PDF_BYTES)                  return unavailable(`${(file.size / 1e6).toFixed(1)} MB — too large`);
+const text = await pdfToText(file.display_name, await downloadFile(file.url));
+if (!text)                                      return unavailable("could not transcribe");
+```
+
+Use the same 10 MB ceiling (`MAX_SYLLABUS_PDF_BYTES` is the precedent; define your own constant, don't import a private one). Cache on a fingerprint of `file.id | file.updated_at | file.size` exactly as `resolveSyllabus` does, so a module's slides are transcribed once and not on every sync — transcription is the single most expensive thing this feature does.
+
+Each `unavailable(reason)` path writes `text_source = 'unavailable'` and stores the reason; the UI shows it per item ("Lecture 6 slides — locked in Canvas"). Silent skips are what make a study pack quietly incomplete.
 
 ## Generation (`generate.ts`)
 
@@ -184,16 +223,22 @@ System prompt requirements:
 ## Sync hook
 
 ```ts
+import { mapLimit, CANVAS_CONCURRENCY } from "@/lib/sync";
+
 export async function syncStudy(ctx: FeatureSyncCtx) {
+  dropOrphans();                        // rows for courses the student un-starred
   if (!canvasConfigured()) return;
-  for (const course of allCourses()) {
-    try { upsertModules(course.id, await listModules(course.id)); }
-    catch (e) { ctx.warnings.push(`modules for ${course.id}: ${(e as Error).message}`); }
-    try { upsertQuizzes(course.id, await listQuizzes(course.id)); } catch { /* quizzes often disabled */ }
-  }
+  const ids = allCourseIds();           // starred courses only — that's all the table holds
+  await mapLimit(ids, CANVAS_CONCURRENCY, async (id) => {
+    try { upsertModules(id, await listModules(id)); }
+    catch (e) { ctx.warnings.push(`modules for course ${id}: ${(e as Error).message}`); }
+    try { upsertQuizzes(id, await listQuizzes(id)); } catch { /* quizzes often disabled */ }
+  });
   await fetchTextForCurrentModules();   // only the current + next module per course, and only items with text IS NULL
 }
 ```
+
+`dropOrphans()` is four `DELETE FROM <your table> WHERE course_id NOT IN (SELECT id FROM courses)` statements. `runSync` prunes its own tables when a course is un-starred but knows nothing about yours.
 
 **Never generate packs during sync.** Generation is expensive and slow; it happens on the `/study` page button or via chat. "Current module" = the highest-position module already unlocked (`unlock_at` in the past or null).
 
@@ -201,7 +246,7 @@ export async function syncStudy(ctx: FeatureSyncCtx) {
 
 | Route | Behaviour |
 |---|---|
-| `GET /api/study` | `{ timezone, courses: [{ id, code, modules: [{ id, name, itemCount, textReady, hasPack, packId }], upcomingQuizzes: [{ id, title, dueAt, timeLimit, allowedAttempts, questionCount, moduleId }] }] }` |
+| `GET /api/study` · `?course=<id>` | `{ timezone, courses: [{ id, code, modules: [{ id, name, itemCount, textReady, unavailableCount, hasPack, packId }], upcomingQuizzes: [{ id, title, dueAt, timeLimit, allowedAttempts, questionCount, moduleId }] }] }`. `?course=` filters to one course — that's what `CourseStudySection` calls. |
 | `POST /api/study/generate` | body `{ moduleId?, quizId?, force?: boolean }` → the full pack. Returns the cached pack unless `force`. `{ error }` with a clear message when `ANTHROPIC_API_KEY` is missing or no text could be extracted. |
 | `POST /api/study/refresh` | modules/quizzes/text sync for this feature only |
 
@@ -223,12 +268,14 @@ Note in the `create_study_pack` description that it takes ~30 seconds, so the mo
 **`/study` page:**
 - Left: course → module list, each row showing item count, a "text ready" tick, and a **Generate study pack** button (or **View pack** when one exists).
 - Right, when a pack is selected:
-  - **Digest** — markdown via `ReactMarkdown` (already used in `app/page.tsx`), inside the shared `Card`.
+  - **Digest** — markdown via `<Markdown>` from `@/app/components/Markdown`, wrapped in `<div className="prose-chat">`, inside the shared `Card`. (Not raw `ReactMarkdown`: the digest will contain GFM tables and plain react-markdown renders them as one run-on paragraph. `app/courses/[id]/page.tsx` shows the pattern for model-generated prose.)
   - **Flashcards** — one card at a time, click to flip, ←/→ to move, a "known / review" counter kept in component state (no persistence in v1), plus a small source link per card back to the Canvas item.
   - **Practice** — questions with hidden answers; reveal per question, then a score at the end.
 - **Upcoming quizzes** strip at the top: title, due date, time limit, attempts, and a **Prep for this quiz** button that generates a pack scoped to the quiz's module.
 
 **`StudyCard.tsx`:** "Next quiz: CHEM 122 Thermochemistry — Fri, 20 min, 2 attempts" + either "Study pack ready →" or a **Prep** button. Returns `null` when there's no upcoming quiz and no current module.
+
+**`CourseStudySection.tsx`:** on `/courses/[id]`, a `Card title="Modules & study packs"` listing that course's modules with their item counts and pack status, plus its upcoming quizzes. This is the section that makes the course page feel complete — the page currently shows what the *syllabus* says about a course; this shows what's actually in it week to week. Fetch `/api/study?course=<id>`; return `null` when the course has no modules and no quizzes (a course with Modules disabled must not leave a dead empty card on the page).
 
 ## Seed data (`scripts/seed-study.ts`)
 
@@ -243,12 +290,16 @@ Delete only `modules`, `module_items`, `quizzes`, `study_packs`. Then, for the d
 
 No network, no model calls — inject fixtures, don't hit Canvas.
 
+If you do want an integration test of `syncStudy` against Canvas, don't invent a harness: `tests/sync.test.ts` already stands up a mock Canvas HTTP server (`node:http`, `CANVAS_BASE_URL` pointed at it) with adversarial fixtures, pagination and a rate-limit case. Copy its setup into your own file rather than importing from it — per §4.3.9, no shared test helpers.
+
 - `content.ts`: HTML page → clean text; truncation marker appears past the cap; unsupported file type → `'unavailable'`
 - `source_hash` is stable for the same inputs and changes when an item's text changes (this is the caching contract)
 - `store.ts`: upserting modules twice doesn't duplicate items; an item removed from Canvas disappears from `module_items`
 - `get_study_pack` returns the seeded CHEM pack; `get_quizzes` returns the seeded quiz with its time limit and attempts
 - `get_modules` with `current_only` picks the unlocked, highest-position module
 - Generation is tested only for its **prompt assembly** (item text concatenated, ids preserved, cap respected) — factor `buildPrompt()` out of `generate.ts` so the model call itself is never invoked in tests
+- the PDF guard chain: non-PDF content type, `locked_for_user`, oversize, and a `pdfToText` returning `null` each produce `text_source = 'unavailable'` with a distinct stored reason, and none of them throw
+- `dropOrphans()` removes modules, items, quizzes and packs for a course id that's no longer in `courses`, and leaves everything else untouched
 
 ## Demo (30 s)
 
@@ -262,5 +313,6 @@ No network, no model calls — inject fixtures, don't hit Canvas.
 |---|---|
 | Modules/Files/Quizzes are disabled in the sandbox course | Every call wrapped in try/catch with a warning; the seed script pre-fills text so the demo never depends on live content. Verify early which tabs your Canvas sandbox actually exposes — do this on day one. |
 | Generation is slow and dominates the demo | Cache by `source_hash`, pre-generate the CHEM pack in the seed, and pre-warm the real one before demoing. |
-| PDF handling eats the whole day | Ship pages-only first (`text_source = 'page'`), add PDFs only once the end-to-end flow is green. This is an explicitly optional stretch, not the core. |
+| PDF handling eats the whole day | It no longer can: `getFile` + `downloadFile` + `pdfToText` are written and proven on syllabi. Still ship pages-only first (`text_source = 'page'`) and turn PDFs on once the end-to-end flow is green. |
+| Transcription cost/latency on every sync | Fingerprint-and-cache exactly as `resolveSyllabus` does (`file.id \| updated_at \| size`); only re-transcribe when the file actually changed. |
 | Hallucinated practice answers | Require `sourceItemId` on every card and question, show the source link in the UI, and say "generated from your course materials — verify before you rely on it" in the page footer. |

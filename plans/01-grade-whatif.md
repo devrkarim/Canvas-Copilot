@@ -14,9 +14,11 @@ You own exactly these paths, and nothing else — run `npm run check:ownership` 
 
 ```
 lib/features/grades/**   app/grades/**   app/api/grades/**
-app/components/cards/GradesCard.tsx   scripts/seed-grades.ts
-tests/grades.test.ts   docs/features/grades.md
+app/components/cards/GradesCard.tsx   app/components/course/CourseGradesSection.tsx
+scripts/seed-grades.ts   tests/grades.test.ts   docs/features/grades.md
 ```
+
+Repo invariants that bite this feature (full list in `plans/README.md` §2.5): the `courses` table holds **only starred courses**, so iterate it rather than asking Canvas for enrollments-at-large; per-course fan-out uses `mapLimit(ids, CANVAS_CONCURRENCY, …)` from `@/lib/sync`; model output renders through `<Markdown>`.
 
 Teammate B's branch imports `lib/features/grades/weights.ts` from the scaffold. **Its signature is frozen** — see "The weight contract" below. You may fill in the body freely; you may not change the exported shape without telling B first.
 
@@ -41,14 +43,15 @@ lib/features/grades/schema.ts     ← fill in the stub
 lib/features/grades/canvas.ts     ← new: your Canvas endpoint wrappers
 lib/features/grades/store.ts      ← new: reads/writes your tables
 lib/features/grades/compute.ts    ← new: PURE math, no db, no network
-lib/features/grades/weights.ts    ← fill in the stub — FROZEN SIGNATURE, feature 2 imports it
+lib/features/grades/weights.ts    ← fill in the stub — FROZEN SIGNATURE, Part 1 imports it
 lib/features/grades/sync.ts       ← fill in the stub
 lib/features/grades/tools.ts      ← fill in the stub
 app/api/grades/route.ts           ← GET  /api/grades
 app/api/grades/whatif/route.ts    ← POST /api/grades/whatif
 app/api/grades/refresh/route.ts   ← POST /api/grades/refresh
 app/grades/page.tsx               ← replace the stub
-app/components/cards/GradesCard.tsx
+app/components/cards/GradesCard.tsx           ← dashboard card
+app/components/course/CourseGradesSection.tsx ← this course's grade, on /courses/[id]
 scripts/seed-grades.ts
 tests/grades.test.ts
 docs/features/grades.md
@@ -206,16 +209,24 @@ Test both directions explicitly: with `grade_groups` empty it returns `null` for
 ## Sync hook (`sync.ts`)
 
 ```ts
+import { mapLimit, CANVAS_CONCURRENCY } from "@/lib/sync";
+
 export async function syncGrades(ctx: FeatureSyncCtx) {
-  if (!canvasConfigured()) return;          // seed-only mode: silently skip
-  for (const course of allCourses()) {
-    const groups = await listAssignmentGroups(course.id);
-    upsertGroupsAndItems(course.id, groups);
-  }
+  if (!canvasConfigured()) return;           // seed-only mode: silently skip
+  const ids = allCourseIds();                // starred courses only — that's all the table holds
+  const results = await mapLimit(ids, CANVAS_CONCURRENCY, async (id) => {
+    try { return { id, groups: await listAssignmentGroups(id) }; }
+    catch (e) { ctx.warnings.push(`grades for course ${id}: ${(e as Error).message}`); return { id, groups: null }; }
+  });
+  for (const { id, groups } of results) if (groups) upsertGroupsAndItems(id, groups);
   attachCanvasScores(await listMyEnrollments());
   detectChanges();                           // writes grade_alerts, then a fresh grade_snapshots row
 }
 ```
+
+Two details inherited from the parallel-sync work in `lib/sync.ts`, worth copying rather than rediscovering: one failed course must not abort the others (catch per course, keep the rows you already have), and fan-out goes through `mapLimit` at `CANVAS_CONCURRENCY` because Canvas throttles with a `403` that the client retries slowly.
+
+Rows for un-starred courses: `runSync` deletes `courses` rows the student un-starred, but it knows nothing about your tables. Clean up at the top of the hook — `DELETE FROM grade_items WHERE course_id NOT IN (SELECT id FROM courses)`, same for `grade_groups`, `grade_snapshots`, `grade_alerts` — mirroring the `forecasts` / `study_blocks` cleanup that `runSync` already does for itself.
 
 `detectChanges()`: for each course, compare `courseGrade(...)` against the most recent snapshot.
 - Δ ≤ −1.0 point → `kind: 'drop'`; Δ ≥ +1.0 → `'rise'`; new graded items with no score change → `'new_grade'`.
@@ -226,7 +237,7 @@ export async function syncGrades(ctx: FeatureSyncCtx) {
 
 | Route | Behaviour |
 |---|---|
-| `GET /api/grades` | `{ timezone, courses: [{ id, code, name, percent, letter, weighted, perGroup, ungradedCount, canvasScore, lastAlert }], alerts: [...] }` |
+| `GET /api/grades` · `GET /api/grades?course=<id>` | `{ timezone, courses: [{ id, code, name, percent, letter, weighted, perGroup, ungradedCount, canvasScore, lastAlert }], alerts: [...] }`, filtered to one course when `?course=` is given (that's what `CourseGradesSection` calls) |
 | `POST /api/grades/whatif` | body `{ course, target?: number \| letter, scope?: { groupId? , assignmentIds? }, overrides?: [{assignmentId, score}] }` → `{ requiredPercent, achievable, projectedPercent, projectedLetter, explanation }` |
 | `POST /api/grades/refresh` | runs the sync hook for grades only; returns counts; 409-style JSON error `{ error }` when Canvas isn't configured |
 
@@ -253,6 +264,8 @@ Tool descriptions matter more than the code here; write them so the model reache
 - An **alerts strip** at the top when `grade_alerts.seen = 0`, with a "mark read" button.
 
 **`GradesCard.tsx`** — a compact `Card title="Grades"`: one line per course (`CS 101 · 91.4% A−`), with a red/green delta pill when there's a recent alert, and a link to `/grades`. Render `null` until `/api/grades` returns at least one course with a percent, so the dashboard stays clean pre-sync.
+
+**`CourseGradesSection.tsx`** — on `/courses/[id]`, directly below the syllabus-derived "Grading weights" card, which makes the contrast the point: the syllabus *claims* Homework is 40%, and this shows what Canvas actually reports plus where you stand in each group. A `Card title="Your grade"` with the percent, the per-group table, and a "What if?" link to `/grades`. Fetch `/api/grades?course=<id>`; return `null` when that course has no graded work.
 
 ## Seed data (`scripts/seed-grades.ts`)
 
@@ -299,5 +312,6 @@ And over the seeded db:
 | Risk | Mitigation |
 |---|---|
 | Canvas grade math has institution-specific rules (grading periods, late policy deductions applied server-side) | Show `canvas_score` beside our `computed_score` and label ours "estimated". If they diverge >1 point, say so in the UI rather than hiding it. |
+| A course the student un-stars leaves orphaned grade rows | The `NOT IN (SELECT id FROM courses)` cleanup at the top of the sync hook, exactly as `runSync` does for `forecasts` / `study_blocks`. |
 | Letter-grade scale varies by school | `DEFAULT_SCALE` constant + allow a per-course override stored in `prefs` (`grade_scale:<course_id>`), which is an append-only key you already own. |
 | Big courses → one API call per course on every sync | Only `assignment_groups` per course (already one call each); reuse `submission` from the same include instead of a second pass. |

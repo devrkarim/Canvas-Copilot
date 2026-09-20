@@ -1,6 +1,8 @@
-# Feature 2 — Late-policy-aware triage + extension requests
+# Part 1 of 3 — Late-policy-aware triage + extension requests
 
 **Owner:** teammate B · **Branch:** `feat/triage` · **Depends on:** the scaffold being on `main`. Nothing else, and nobody else.
+
+This file plus §2.5, §3 and §4 of `plans/README.md` is your complete assignment. You will not need to ask anyone anything to finish it.
 
 ## Before you start
 
@@ -15,15 +17,26 @@ You own exactly these paths and may not create or edit anything else:
 
 ```
 lib/features/triage/**   app/triage/**   app/api/triage/**
-app/components/cards/TriageCard.tsx   scripts/seed-triage.ts
-tests/triage.test.ts   docs/features/triage.md
+app/components/cards/TriageCard.tsx   app/components/course/CourseTriageSection.tsx
+scripts/seed-triage.ts   tests/triage.test.ts   docs/features/triage.md
 ```
 
-Run `npm run check:ownership` before every commit; it fails the moment you touch someone else's file. The stubs you're filling in (`lib/features/triage/{schema,tools,sync}.ts`) already exist and are already wired into the app — you never edit a registry, a nav bar, `lib/db.ts`, or `package.json`.
+Run `npm run check:ownership` before every commit; it fails the moment you touch someone else's file. The stubs you're filling in (`lib/features/triage/{schema,tools,sync}.ts`, both UI components) already exist and are already wired into the app — you never edit a registry, a nav bar, a page, `lib/db.ts`, or `package.json`.
 
-**Read-only dependencies** (import freely, never edit): `@/lib/db`, `@/lib/time`, `@/lib/llm`, `@/lib/forecast`, `@/lib/tools/shared`, and `@/lib/features/grades/weights` (see Step 3).
+**Read-only dependencies** (import freely, never edit): `@/lib/db`, `@/lib/time`, `@/lib/llm`, `@/lib/forecast`, `@/lib/tools/shared`, `@/app/components/ui`, `@/app/components/Markdown`, and `@/lib/features/grades/weights` (see Step 3).
 
 **Never create:** a shared helper outside your folder (`lib/utils.ts`, `lib/features/common.ts`, `tests/helpers.ts`, …). If you want something another feature also wants, write your own copy inside `lib/features/triage/`.
+
+### The four repo facts this feature is built on
+
+Read `plans/README.md` §2.5 in full; these four are the ones you'll hit within the first hour.
+
+1. **Only starred courses are in the database.** `runSync` deletes everything else. So iterate the `courses` table; never ask Canvas for a course list. (This feature makes no Canvas calls at all.)
+2. **`courses.late_policy` is null for any course whose syllabus couldn't be read** — `syllabus_source` is `link_only` (tab was just an unreadable attachment) or `none`. That's a large fraction of real courses. A null late policy means *"we don't know this course's policy"*, never *"this course has no late penalty"*, and the difference is the whole feature's credibility. Use `courseHasSyllabus(c)` from `@/lib/db` to tell the two apart, and report coverage in the UI (Step 1).
+3. **Dynamic route params are a Promise** in Next 16 — you don't have a dynamic route, but if you add one, copy `app/api/proposals/[id]/route.ts`.
+4. **Markdown renders through `<Markdown>`** from `@/app/components/Markdown` inside `<div className="prose-chat">` — relevant when you preview a drafted extension email.
+
+Also: your feature is the top line of the repo's `to-do.md` ("add extension feature"), so the extension-request half is not optional garnish — it's the half that was explicitly asked for.
 
 ## The pitch
 
@@ -54,7 +67,8 @@ app/api/triage/route.ts            ← GET  /api/triage
 app/api/triage/refresh/route.ts    ← POST /api/triage/refresh
 app/api/triage/extension/route.ts  ← POST /api/triage/extension
 app/triage/page.tsx                ← replace the stub
-app/components/cards/TriageCard.tsx
+app/components/cards/TriageCard.tsx           ← dashboard card
+app/components/course/CourseTriageSection.tsx ← this course's deadlines + policy, on /courses/[id]
 scripts/seed-triage.ts
 tests/triage.test.ts
 docs/features/triage.md
@@ -75,6 +89,7 @@ CREATE TABLE IF NOT EXISTS late_policies (
   max_days REAL,                     -- accepted up to N days late; NULL = unbounded
   max_penalty_percent REAL,          -- cap, e.g. "at most 30%"
   applies_to TEXT,                   -- free text: "lab reports only", NULL = everything
+  unknown_reason TEXT,               -- NULL | not_stated | syllabus_unreadable | no_syllabus
   confidence REAL NOT NULL DEFAULT 0,
   quote TEXT,                        -- the sentence this came from, for the UI
   source_hash TEXT NOT NULL,         -- hash of courses.late_policy; re-extract only when it changes
@@ -122,6 +137,17 @@ Calibration rules to put in the system prompt:
 - Anything ambiguous → `penaltyType: "unknown"`, `confidence < 0.5`.
 
 **Must degrade without an API key.** When `llmConfigured()` is false, or the course has no `late_policy`, write a row with `penaltyType: "unknown"`, `confidence: 0`. The scorer then falls back to a pure deadline+points ranking and the UI says *"late policy unknown — ranked by deadline and weight only."* Half of your test suite runs on this path.
+
+**Distinguish the three reasons a policy is unknown**, because they have different fixes and the student can act on two of them. Store the reason in `late_policies.applies_to`… no — add a dedicated column, `unknown_reason TEXT`, to your own table:
+
+| `courses.syllabus_source` | `late_policy` | `unknown_reason` | What the UI says |
+|---|---|---|---|
+| `html` / `pdf` | non-null | `null` | the real policy |
+| `html` / `pdf` | null | `not_stated` | "the syllabus doesn't state a late policy" |
+| `link_only` | null | `syllabus_unreadable` | "this course's syllabus is an attachment Canvas Copilot couldn't read" |
+| `none` | null | `no_syllabus` | "this course has no syllabus in Canvas" |
+
+Use `courseHasSyllabus(c)` (from `@/lib/db`) plus `c.syllabus_source` to pick between the last three. This is a small amount of extra code that buys the feature its honesty: a ranked list that quietly assumed "no penalty" for every unreadable syllabus would be confidently wrong on the courses that matter most.
 
 ## Step 2 — The score (`score.ts`, pure)
 
@@ -201,7 +227,7 @@ export async function syncTriage(ctx: FeatureSyncCtx) {
 
 | Route | Behaviour |
 |---|---|
-| `GET /api/triage?horizon=14` | `{ timezone, ranked: [{ assignmentId, name, course, dueAt, hoursUntilDue, weightPercent, weightApproximate, estimatedHours, lossPerHour, lossIfOneDayLate, band, reason, policy: { summary, quote, confidence } }], policyCoverage: { known, unknown } }` |
+| `GET /api/triage?horizon=14` · `&course=<id>` | `{ timezone, ranked: [{ assignmentId, name, course, courseId, dueAt, hoursUntilDue, weightPercent, weightApproximate, estimatedHours, lossPerHour, lossCurve, lossIfOneDayLate, band, reason, policy: { summary, quote, confidence, unknownReason } }], policyCoverage: { known, notStated, unreadable, noSyllabus } }`. `?course=` filters to one course — that's what `CourseTriageSection` calls. |
 | `POST /api/triage/refresh` | re-extract policies (LLM) + recompute; `{ error }` when the key is missing |
 | `POST /api/triage/extension` | body `{ assignmentId, reason?, days? }` → creates a `message` proposal via `createProposal` and returns `{ proposalId }` |
 
@@ -224,9 +250,11 @@ For the extension draft, mirror `propose_message` in `lib/tools/index.ts`: look 
 - A cost strip per row: *"−3.0 pts if late at all"* (cliff, red) or *"−0.14 pts/hour once late"* (slope, amber) or *"no penalty for 48 h"* (green).
 - A **"what if I'm late?"** slider (0–72 h) that redraws the projected loss for the selected row — pure client-side math against `lossIfLateBy` values returned by the API (return a small precomputed curve, e.g. losses at 0/6/12/24/48/72 h, so the page needs no extra round trips).
 - **"Request an extension"** button per row → `POST /api/triage/extension` → link to `/proposals`.
-- A banner when `policyCoverage.unknown > 0`: "2 courses have no readable late policy — ranked by deadline and weight only."
+- A footnote (not a banner — the dashboard already has one about course scope) when any course lacks a policy, naming the reason: *"2 courses have no readable late policy: CHEM 122's syllabus is an unreadable attachment, ENGL 240 has no syllabus in Canvas. Those are ranked by deadline and weight only."* Link each course name to `/courses/<id>`, where the student can see the syllabus state for themselves.
 
 **`TriageCard.tsx`:** top 3 rows with the band colour and the one-line reason, linking to `/triage`. Returns `null` when nothing is upcoming.
+
+**`CourseTriageSection.tsx`:** on `/courses/[id]`, a `Card title="What's at stake"` sitting right under the course's "Late policy" card — which shows the *raw* syllabus text, while yours shows what that text actually costs: this course's upcoming assignments ranked, each with its loss figure, plus the **Request an extension** button. When `unknownReason` is set, render that instead of numbers. Fetch `/api/triage?course=<id>`; return `null` when the course has nothing upcoming.
 
 ## Seed data (`scripts/seed-triage.ts`)
 
@@ -234,7 +262,9 @@ Delete only `late_policies` and `triage_scores`. Then insert structured policies
 
 - CS 101 → `percent_per_day`, 10%/day, `maxDays: 3`
 - CHEM 122 → `no_credit` for problem sets (`appliesTo: "problem sets"`), and note the 48 h/20% lab variation in `quote` — a good demo of the `appliesTo` caveat
-- ENGL 240 → `letter_per_day`, 3.33 pts/day, `maxDays: 7`
+- ENGL 240 → **no row at all.** `seed-demo.ts` deliberately gives ENGL 240 no syllabus, so it's your free test of the `unknown_reason` path. Set its `courses.syllabus_source` to `'none'` in your seed (that column is null in `seed-demo` rows, since that script predates it) and let your own code classify it.
+
+Add a fourth case by hand if you want the `syllabus_unreadable` state on screen for the demo: `UPDATE courses SET syllabus_source = 'link_only', late_policy = NULL WHERE id = 202` in your seed, which turns CHEM into the "we couldn't read this syllabus" example. Pick one of the two — don't make every demo course broken.
 
 Leave `triage_scores` empty — it's recomputed on load. That proves the recompute path works from a cold start.
 
@@ -253,6 +283,8 @@ Seeded tests (`seed-demo` then `seed-triage`):
 - `get_triage` returns items in non-increasing `riskScore`
 - `explain_late_cost` for the CHEM problem set quotes "No late submissions"
 - `draft_extension_request` creates exactly one pending proposal, and a second identical call doesn't duplicate it
+- a course with `syllabus_source = 'none'` yields `unknownReason: "no_syllabus"` and still appears in the ranking (ranked by deadline and weight), rather than being dropped or scored as penalty-free
+- `policyCoverage` counts add up to the number of courses — the quickest guard against a course silently vanishing from triage
 
 ## Demo (30 s)
 
@@ -265,5 +297,6 @@ Seeded tests (`seed-demo` then `seed-triage`):
 | Risk | Mitigation |
 |---|---|
 | Policy extraction is wrong and the student trusts a bad number | Always show `quote` + a confidence pill next to any number; refuse to show a per-hour cost when `confidence < 0.5`. |
+| Most real courses have an unreadable syllabus, so the feature looks empty | The `unknown_reason` states turn "empty" into "here's exactly why, and here's the Canvas link" — and the ranking still works from deadline + weight alone. Build that path first, not last. |
 | The weight estimate is approximate | Label it `≈` everywhere, and explain the source in a tooltip ("from the syllabus grading table"). It upgrades itself to Canvas's real weights, with no code change on your side, once feature 1 merges. |
 | Score feels arbitrary to judges | The `reason` string names the two or three inputs that drove the ranking; the formula is three multiplicands and fits on a slide. |
