@@ -9,11 +9,11 @@ interface Turn { role: "user" | "assistant"; text: string; tools: string[]; erro
 
 const SUGGESTIONS = [
   "What's due this week?",
-  "What should I work on first today?",
-  "Did anything change in my courses this week?",
-  "When can I go to office hours this week?",
+  "What should I work on first?",
+  "Any course updates?",
+  "When are office hours?",
   "How heavy is next week?",
-  "Draft a message to my professor about the assignment I missed",
+  "Draft a message about missed work",
 ];
 
 export default function ChatPage() {
@@ -34,7 +34,7 @@ function Chat() {
   const seeded = useRef(false);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    if (turns.length > 0) bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns]);
 
   useEffect(() => {
@@ -109,16 +109,18 @@ function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-7.5rem)]">
+    <div className="chat-shell flex flex-col">
       <div className="flex-1 overflow-y-auto space-y-4 pb-4">
         {turns.length === 0 && (
-          <div className="pt-10 text-center space-y-4">
-            <p className="text-zinc-500">Ask anything about your courses. I read Canvas, your syllabi and your calendar.</p>
-            <div className="flex flex-wrap justify-center gap-2">
+          <div className="chat-intro space-y-5">
+            <p className="eyebrow">Your course assistant</p>
+            <h1>A little help. A clearer plan.</h1>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">Ask about deadlines, course updates, or your next step.</p>
+            <div className="grid sm:grid-cols-2 gap-3 pt-3">
               {SUGGESTIONS.map((s) => (
                 <button key={s} onClick={() => send(s)}
-                  className="text-sm px-3 py-1.5 rounded-full border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                  {s}
+                  className="suggestion">
+                  {s}<span aria-hidden="true" className="float-right text-teal-600 dark:text-teal-300">↗</span>
                 </button>
               ))}
             </div>
@@ -128,14 +130,14 @@ function Chat() {
           <div key={i} className={`flex ${t.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`min-w-0 rounded-2xl px-4 py-2.5 text-sm ${
               t.role === "user"
-                ? "max-w-[80%] bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                ? "max-w-[80%] bg-teal-700 text-white dark:bg-teal-900"
                 : "max-w-[92%] bg-white border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800"
             }`}>
               {t.tools.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-1.5">
                   {t.tools.map((name, j) => (
                     <span key={j} className="text-[11px] px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 font-mono">
-                      {name}
+                      {name.replaceAll("_", " ")}
                     </span>
                   ))}
                 </div>
@@ -155,13 +157,14 @@ function Chat() {
 
       <form
         onSubmit={(e) => { e.preventDefault(); send(input); }}
-        className="flex gap-2 pt-3 border-t border-zinc-200 dark:border-zinc-800"
+        className="flex flex-wrap gap-2 pt-3 border-t border-zinc-200 dark:border-zinc-800"
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about assignments, announcements, office hours, your week…"
-          className="flex-1 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-400"
+          aria-label="Message to your course assistant"
+          placeholder="What can I help with?"
+          className="min-w-0 flex-1 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-4 py-3 text-sm focus:ring-2 focus:ring-teal-500"
           disabled={busy}
         />
         <Button type="submit" disabled={busy || !input.trim()}>{busy ? "…" : "Send"}</Button>

@@ -57,9 +57,9 @@ export default function Dashboard() {
     const j = await r.json();
     const scope = !j.favoritesSet
       ? `Synced all ${j.courses} courses (none are starred in Canvas)`
-      : `Synced ${j.courses} starred course${j.courses === 1 ? "" : "s"}${j.coursesHidden ? `, skipped ${j.coursesHidden} un-starred` : ""}`;
+      : `Synced ${j.courses} starred course${j.courses === 1 ? "" : "s"}`;
     setMsg(r.ok
-      ? `${scope}, ${j.assignments} assignments, ${j.announcements} announcements (${j.newAnnouncements} new), ${j.calendarEvents} events. ${j.syllabiExtracted} syllabi read${j.syllabiFromPdf ? ` (${j.syllabiFromPdf} from PDF)` : ""}, ${j.proposalsCreated} proposals created.${j.warnings?.length ? ` Warnings: ${j.warnings.join("; ")}` : ""}`
+      ? `${scope}. ${j.proposalsCreated} new proposals.${j.warnings?.length ? ` Warnings: ${j.warnings.join("; ")}` : ""}`
       : `Sync failed: ${j.error}`);
     setBusy(null); load();
   }
@@ -68,7 +68,7 @@ export default function Dashboard() {
     setBusy("briefing"); setMsg(null);
     const r = await fetch("/api/briefing", { method: "POST" });
     const j = await r.json();
-    setMsg(r.ok ? `Briefing generated${j.delivered?.length ? ` and sent to ${j.delivered.join(", ")}` : " (no delivery channel configured — shown below)"}.` : `Briefing failed: ${j.error}`);
+    setMsg(r.ok ? `Briefing ready${j.delivered?.length ? ` and sent to ${j.delivered.join(", ")}` : " below"}.` : `Briefing failed: ${j.error}`);
     setBusy(null); load();
   }
 
@@ -78,42 +78,53 @@ export default function Dashboard() {
   const later = dash?.upcoming.filter((a) => a.due_at && new Date(a.due_at) > tomorrow) ?? [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">
-          {status?.me ? `Hi, ${status.me.split(" ")[0]}` : "Dashboard"}
-        </h1>
-        <span className="text-sm text-zinc-500">
-          {status?.lastSync ? `Last sync ${fmt(status.lastSync, tz)}` : "Not synced yet"}
-        </span>
-        <div className="ml-auto flex gap-2">
+    <div className="space-y-6">
+      <section className="dashboard-hero">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Your study space</p>
+          <h1>{status?.me ? `Hi, ${status.me.split(" ")[0]}.` : "Your day, at a glance."}</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-3">A clear view of what needs your attention.</p>
+        </div>
+        <div className="sm:ml-auto flex flex-wrap gap-2">
           <Button onClick={sync} disabled={busy !== null || !status?.canvasConfigured}>{busy === "sync" ? "Syncing…" : "Sync Canvas"}</Button>
-          <Button variant="ghost" onClick={sendBriefing} disabled={busy !== null || !status?.llmConfigured}>{busy === "briefing" ? "Writing…" : "Send briefing now"}</Button>
+          <Button variant="ghost" onClick={sendBriefing} disabled={busy !== null || !status?.llmConfigured}>{busy === "briefing" ? "Writing…" : "Send briefing"}</Button>
         </div>
       </div>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">{status?.lastSync ? `Updated ${fmt(status.lastSync, tz)}` : "Sync Canvas to get started."}</p>
+      <dl className="stats-grid">
+        <div className="stat"><dt>Due in 36 hours</dt><dd className="text-teal-700 dark:text-teal-300">{dash ? dueSoon.length : "—"}</dd></div>
+        <div className="stat"><dt>Missing</dt><dd className="text-amber-700 dark:text-amber-300">{status?.counts.missing ?? "—"}</dd></div>
+        <div className="stat"><dt>To review</dt><dd className="text-blue-700 dark:text-blue-300">{status?.counts.pendingProposals ?? "—"}</dd></div>
+        <div className="stat"><dt>Courses</dt><dd>{status?.counts.courses ?? "—"}</dd></div>
+      </dl>
+      </section>
 
       {status && (!status.canvasConfigured || !status.llmConfigured) && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-3 text-sm">
+        <details className="rounded-xl border border-amber-300 bg-amber-50 dark:bg-amber-950 dark:border-amber-800 p-4 text-sm">
+          <summary className="font-medium">Finish setup to enable {status.canvasConfigured ? "AI features" : "Canvas sync"}</summary>
+          <div className="mt-3 space-y-2">
           {!status.canvasConfigured && <p>Set <code>CANVAS_BASE_URL</code> and <code>CANVAS_TOKEN</code> in <code>.env.local</code>, then restart.</p>}
           {!status.llmConfigured && <p>Set <code>ANTHROPIC_API_KEY</code> in <code>.env.local</code> to enable chat, extraction and briefings.</p>}
-        </div>
+          </div>
+        </details>
       )}
-      {msg && <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
+      {msg && <div role="status" className="rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-3 text-sm">{msg}</div>}
 
       {status && status.counts.pendingProposals > 0 && (
         <Link href="/proposals" className="block rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-950 dark:border-blue-800 p-3 text-sm">
-          <b>{status.counts.pendingProposals}</b> proposed change{status.counts.pendingProposals === 1 ? "" : "s"} waiting for your approval →
+          <b>{status.counts.pendingProposals}</b> change{status.counts.pendingProposals === 1 ? "" : "s"} to review <span className="float-right font-medium">View proposals →</span>
         </Link>
       )}
 
       <div className="grid md:grid-cols-2 gap-4">
-        <Card title="Due today & tomorrow">
+        <Card title="Due soon">
           {dueSoon.length === 0 ? <Empty>Nothing due in the next 36 hours.</Empty> : (
             <ul className="space-y-2 text-sm">
               {dueSoon.map((a) => (
-                <li key={a.id} className="flex justify-between gap-2">
-                  <span><Pill tone="red">{a.course}</Pill> <a href={a.url ?? "#"} target="_blank" className="hover:underline">{a.name}</a></span>
-                  <span className="text-zinc-500 whitespace-nowrap">{fmt(a.due_at, tz)}</span>
+                <li key={a.id} className="assignment-row">
+                  <span><Pill tone="blue">{a.course}</Pill> <a href={a.url ?? "#"} target="_blank" rel="noreferrer" className="assignment-title hover:underline">{a.name}</a></span>
+                  <time dateTime={a.due_at ?? undefined}>{fmt(a.due_at, tz)}</time>
                 </li>
               ))}
             </ul>
@@ -124,9 +135,9 @@ export default function Dashboard() {
           {later.length === 0 ? <Empty>Nothing else due this week.</Empty> : (
             <ul className="space-y-2 text-sm">
               {later.map((a) => (
-                <li key={a.id} className="flex justify-between gap-2">
-                  <span><Pill>{a.course}</Pill> <a href={a.url ?? "#"} target="_blank" className="hover:underline">{a.name}</a></span>
-                  <span className="text-zinc-500 whitespace-nowrap">{fmt(a.due_at, tz)}</span>
+                <li key={a.id} className="assignment-row">
+                  <span><Pill>{a.course}</Pill> <a href={a.url ?? "#"} target="_blank" rel="noreferrer" className="assignment-title hover:underline">{a.name}</a></span>
+                  <time dateTime={a.due_at ?? undefined}>{fmt(a.due_at, tz)}</time>
                 </li>
               ))}
             </ul>
@@ -137,17 +148,17 @@ export default function Dashboard() {
           {!dash?.missing.length ? <Empty>No missing assignments.</Empty> : (
             <ul className="space-y-2 text-sm">
               {dash.missing.map((a) => (
-                <li key={a.id} className="flex justify-between gap-2">
-                  <span><Pill tone="amber">{a.course}</Pill> {a.name}</span>
-                  <span className="text-zinc-500 whitespace-nowrap">was due {fmt(a.due_at, tz)}</span>
+                <li key={a.id} className="assignment-row">
+                  <span><Pill tone="amber">{a.course}</Pill><span className="assignment-title">{a.name}</span></span>
+                  <time dateTime={a.due_at ?? undefined}>Due {fmt(a.due_at, tz)}</time>
                 </li>
               ))}
             </ul>
           )}
         </Card>
 
-        <Card title="Office hours (from syllabi)">
-          {!dash?.officeHours.length ? <Empty>No office hours extracted yet — sync with a syllabus that lists them.</Empty> : (
+        <Card title="Office hours">
+          {!dash?.officeHours.length ? <Empty>Sync a syllabus to see office hours.</Empty> : (
             <ul className="space-y-1.5 text-sm">
               {dash.officeHours.map((o) => (
                 <li key={o.id}><Pill tone="blue">{o.course}</Pill> {o.instructor}: {o.day} {o.start_time}–{o.end_time}{o.location ? ` · ${o.location}` : ""}</li>
@@ -161,12 +172,13 @@ export default function Dashboard() {
         {!dash?.announcements.length ? <Empty>No announcements synced.</Empty> : (
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800 text-sm">
             {dash.announcements.map((a) => (
-              <li key={a.id} className="py-2">
-                <div className="flex justify-between gap-2">
+              <li key={a.id} className="announcement">
+                <div className="flex flex-wrap justify-between gap-2">
                   <span><Pill>{a.course}</Pill> <a href={a.url ?? "#"} target="_blank" className="font-medium hover:underline">{a.title}</a></span>
                   <span className="text-zinc-500 whitespace-nowrap">{fmt(a.posted_at, tz)}</span>
                 </div>
-                <p className="text-zinc-600 dark:text-zinc-400 mt-1">{a.actions?.tldr ?? a.text}</p>
+                {a.actions?.tldr && <p className="text-zinc-600 dark:text-zinc-400 mt-2">{a.actions.tldr}</p>}
+                {a.text && <details><summary>Read announcement</summary><p className="mt-2 whitespace-pre-wrap">{a.text}</p></details>}
                 {a.actions?.actions?.map((x, i) => (
                   <p key={i} className="mt-1"><Pill tone="green">{x.kind.replaceAll("_", " ")}</Pill> <span className="text-zinc-700 dark:text-zinc-300">{x.summary}</span></p>
                 ))}
@@ -176,8 +188,8 @@ export default function Dashboard() {
         )}
       </Card>
 
-      <Card title={`Latest briefing${briefing ? ` · ${fmt(briefing.created_at, tz)}` : ""}`}>
-        {!briefing ? <Empty>No briefing yet. Click “Send briefing now” or wait for the {process.env.NEXT_PUBLIC_BRIEFING_HOUR ?? "7:00"} schedule.</Empty> : (
+      <Card title="Your briefing" action={briefing ? <span className="text-xs text-zinc-500">{fmt(briefing.created_at, tz)}</span> : undefined}>
+        {!briefing ? <Empty>Use “Send briefing” for a quick daily summary.</Empty> : (
           <div className="prose-chat text-sm"><Markdown>{briefing.content}</Markdown></div>
         )}
       </Card>
@@ -188,8 +200,9 @@ export default function Dashboard() {
             {dash.courses.map((c) => (
               <li key={c.id}>
                 <Link href={`/courses/${c.id}`}
-                  className="block h-full rounded-lg border border-zinc-100 dark:border-zinc-800 p-2 hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                  <div className="font-medium">{c.code ?? ""} {c.name}</div>
+                  className="course-link">
+                  {c.code && <div className="eyebrow">{c.code}</div>}
+                  <div className="font-medium mb-1">{c.name}</div>
                   <div className="text-zinc-500">{c.instructor ?? "instructor unknown"} · {syllabusLabel(c.syllabus, c.syllabusSource)}</div>
                   {/* Teaser only — the full policy and syllabus live on the course page. */}
                   {c.latePolicy && <div className="text-zinc-600 dark:text-zinc-400 mt-1 line-clamp-2">Late policy: {c.latePolicy}</div>}
@@ -201,14 +214,14 @@ export default function Dashboard() {
         <CourseScope status={status} shown={dash?.courses.length ?? 0} />
       </Card>
 
-      <p className="text-xs text-zinc-400">Today is {today.toLocaleDateString("en-US", { timeZone: tz, dateStyle: "full" })} · timezone {tz}</p>
+      {nowMs > 0 && <p className="text-xs text-zinc-500">{today.toLocaleDateString("en-US", { timeZone: tz, dateStyle: "full" })} · {tz}</p>}
     </div>
   );
 }
 
 /** Says what we actually hold, not just whether the Syllabus tab has any HTML in it. */
 function syllabusLabel(readable: boolean, source: Dash["courses"][number]["syllabusSource"]): string {
-  if (source === "pdf") return "syllabus read from PDF";
+  if (source === "pdf") return "PDF syllabus";
   if (source === "link_only") return "syllabus attached, unreadable";
   return readable ? "syllabus available" : "no syllabus tab";
 }
@@ -231,18 +244,16 @@ function CourseScope({ status, shown }: { status: Status | null; shown: number }
     <p className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-xs text-zinc-500">
       {!favoritesSet ? (
         <>
-          You haven&apos;t starred any courses in Canvas, so all {total} are included.
-          Canvas Copilot follows your stars — star the ones you care about to narrow this down. {link}
+          Showing all {total} courses. Star courses in Canvas to narrow this list. {link}
         </>
       ) : hidden > 0 ? (
         <>
           Showing your {shown} starred Canvas course{shown === 1 ? "" : "s"} · {hidden} hidden.
-          Canvas Copilot only reads starred courses. {link}
+          {link}
         </>
       ) : (
         <>
-          Showing all {shown} of your starred Canvas courses. Canvas Copilot only reads
-          starred courses — un-star one in Canvas and it disappears here on the next sync. {link}
+          Showing {shown} starred courses. Update your stars, then sync to refresh. {link}
         </>
       )}
     </p>
