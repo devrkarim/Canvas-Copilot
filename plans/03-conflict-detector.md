@@ -1,6 +1,8 @@
-# Feature 3 — Syllabus ↔ Canvas discrepancy & schedule conflict detector
+# Part 2 of 3 — Syllabus ↔ Canvas discrepancy & schedule conflict detector
 
 **Owner:** teammate C · **Branch:** `feat/conflicts` · **Depends on:** the scaffold being on `main`. Nothing else, and nobody else. No new Canvas endpoints.
+
+This file plus §2.5, §3 and §4 of `plans/README.md` is your complete assignment. You will not need to ask anyone anything to finish it.
 
 ## Before you start
 
@@ -15,17 +17,26 @@ You own exactly these paths and may not create or edit anything else:
 
 ```
 lib/features/conflicts/**   app/conflicts/**   app/api/conflicts/**
-app/components/cards/ConflictsCard.tsx   scripts/seed-conflicts.ts
-tests/conflicts.test.ts   docs/features/conflicts.md
+app/components/cards/ConflictsCard.tsx   app/components/course/CourseConflictsSection.tsx
+scripts/seed-conflicts.ts   tests/conflicts.test.ts   docs/features/conflicts.md
 ```
 
-Run `npm run check:ownership` before every commit; it fails the moment you touch someone else's file. The stubs you're filling in (`lib/features/conflicts/{schema,tools,sync}.ts`) already exist and are already wired into the app — you never edit a registry, a nav bar, `lib/db.ts`, or `package.json`.
+Run `npm run check:ownership` before every commit; it fails the moment you touch someone else's file. The stubs you're filling in (`lib/features/conflicts/{schema,tools,sync}.ts`, both UI components) already exist and are already wired into the app — you never edit a registry, a nav bar, a page, `lib/db.ts`, or `package.json`.
 
-**Read-only dependencies** (import freely, never edit): `@/lib/db` (including `createProposal`), `@/lib/time`, `@/lib/llm`, `@/lib/tools/shared`.
+**Read-only dependencies** (import freely, never edit): `@/lib/db` (including `createProposal` and `courseHasSyllabus`), `@/lib/time`, `@/lib/llm`, `@/lib/tools/shared`, `@/app/components/ui`.
 
 **Never create:** a shared helper outside your folder (`lib/utils.ts`, `lib/features/common.ts`, `tests/helpers.ts`, …). If you want something another feature also wants, write your own copy inside `lib/features/conflicts/`.
 
-One caution specific to this feature: it reads data that features 1, 2 and 4 don't own either — `courses.exam_dates`, `announcements.actions`, `calendar_events`. All of it is read-only for you. Never `UPDATE` a core table outside `scripts/seed-conflicts.ts`.
+### The four repo facts this feature is built on
+
+Read `plans/README.md` §2.5 in full; these four decide whether your detectors are right or merely plausible.
+
+1. **`courses.exam_dates` — your primary input — is null whenever the syllabus couldn't be read.** `syllabus_source` is `html | pdf | link_only | none`; only the first two yield extracted facts, and `link_only` (a Syllabus tab holding nothing but an unreadable attachment) is common in real Canvas. A course with no `exam_dates` is **not** a course with no conflicts, and your UI must not imply otherwise — see "Coverage, not silence" below.
+2. **Only starred courses exist.** `runSync` deletes the rest, so cross-course detectors (two exams one day) only ever see the starred set. That's correct behaviour, but say so in the empty state: "checked 3 starred courses".
+3. **Dynamic route params are a Promise.** `POST /api/conflicts/[id]` must be `{ params }: { params: Promise<{ id: string }> }` then `const { id } = await params;`. Copy `app/api/proposals/[id]/route.ts` — it also shows the id-validation and error-shape conventions.
+4. **Read-only on core tables.** You read `courses.exam_dates`, `announcements.actions`, `assignments`, `calendar_events` — all of which other features also read. Never `UPDATE` a core table outside `scripts/seed-conflicts.ts`.
+
+A useful piece of context: the course detail page (`/courses/[id]`) already renders `exam_dates` under an **Exams** card, and the late policy, weights and full syllabus beside it. The student can therefore see the syllabus's claim; what's missing — your job — is the comparison against what Canvas actually says.
 
 ## The pitch
 
@@ -53,9 +64,10 @@ lib/features/conflicts/sync.ts       ← fill in the stub
 lib/features/conflicts/tools.ts      ← fill in the stub
 app/api/conflicts/route.ts           ← GET  /api/conflicts
 app/api/conflicts/scan/route.ts      ← POST /api/conflicts/scan
-app/api/conflicts/[id]/route.ts      ← POST /api/conflicts/:id  { action }
+app/api/conflicts/[id]/route.ts      ← POST /api/conflicts/:id  { action }   (async params!)
 app/conflicts/page.tsx               ← replace the stub
-app/components/cards/ConflictsCard.tsx
+app/components/cards/ConflictsCard.tsx           ← dashboard card
+app/components/course/CourseConflictsSection.tsx ← this course's discrepancies, on /courses/[id]
 scripts/seed-conflicts.ts
 tests/conflicts.test.ts
 docs/features/conflicts.md
@@ -91,9 +103,25 @@ CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status, severity);
 
 Keep every detector a pure function `(inputs) => Finding[]`. No `db()` calls in this file; `store.ts` loads the rows and passes them in. This is what makes the feature fully testable without Canvas or an API key.
 
+### Coverage, not silence
+
+Before the detectors: `scanAll()` also returns a **coverage** summary, and every surface renders it next to the findings.
+
+```ts
+interface Coverage {
+  coursesChecked: number;                      // rows in `courses` (= starred courses)
+  coursesWithExamDates: number;                // syllabus gave us dates to compare
+  coursesUnreadableSyllabus: number;           // syllabus_source = 'link_only'
+  coursesNoSyllabus: number;                   // syllabus_source = 'none' (or null with no body)
+  assignmentsChecked: number; eventsChecked: number;
+}
+```
+
+"No conflicts found" is only trustworthy when you also say what was checked. `0 conflicts` across 3 courses where 2 have unreadable syllabi means *"I could only really check one course"*, and the student should hear that — with a link to `/courses/<id>` where they can see the syllabus state themselves.
+
 ### D1 · `syllabus_vs_canvas`
 
-Inputs: `courses.exam_dates` (JSON `[{name, date, notes}]`, already extracted), `assignments` (name + `due_at`), `calendar_events` (title + `start_at`).
+Inputs: `courses.exam_dates` (JSON `[{name, date, notes}]`, already extracted — null for courses whose syllabus wasn't readable, which is exactly what `Coverage` is for), `assignments` (name + `due_at`), `calendar_events` (title + `start_at`).
 
 1. For each syllabus exam entry with a non-null `date`, find the best matching Canvas item by normalised name similarity (lowercase, strip punctuation, token overlap; `"Midterm Exam"` ↔ `"Midterm"`). Require ≥ 0.5 token overlap or an explicit keyword hit (`midterm`, `final`, `exam`, `quiz N`).
 2. Compare dates **in the student's timezone** using `partsInTz` from `@/lib/time` — compare calendar days, not instants, or every evening deadline looks like an off-by-one.
@@ -145,9 +173,22 @@ Cheap and deterministic — no LLM, so it runs on every sync. Drafting is on-dem
 
 | Route | Behaviour |
 |---|---|
-| `GET /api/conflicts?status=open` | `{ timezone, conflicts: [{ id, kind, severity, title, explanation, detail, status, proposalId, firstSeenAt }], counts: { open, dismissed, resolved } }` |
-| `POST /api/conflicts/scan` | re-run the detectors; `{ created, updated, resolved }` |
-| `POST /api/conflicts/:id` | `{ action: "dismiss" \| "reopen" \| "draft_question" }`; `draft_question` returns `{ proposalId }` |
+| `GET /api/conflicts?status=open` · `&course=<id>` | `{ timezone, conflicts: [{ id, kind, severity, courseId, title, explanation, detail, status, proposalId, firstSeenAt }], counts: { open, dismissed, resolved }, coverage }`. `?course=` filters to one course — that's what `CourseConflictsSection` calls. |
+| `POST /api/conflicts/scan` | re-run the detectors; `{ created, updated, resolved, coverage }` |
+| `POST /api/conflicts/[id]` | `{ action: "dismiss" \| "reopen" \| "draft_question" }`; `draft_question` returns `{ proposalId }` |
+
+The `[id]` route in Next 16 — copy this shape exactly:
+
+```ts
+export const dynamic = "force-dynamic";
+
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const cid = Number(id);
+  if (!Number.isInteger(cid) || cid <= 0) return Response.json({ error: "invalid conflict id" }, { status: 400 });
+  // …
+}
+```
 
 ## Chat tools (`tools.ts`)
 
@@ -164,18 +205,21 @@ Write the `get_conflicts` description so the model checks it on "is there anythi
 - Severity-ordered list. Each card shows the two sources side by side — a small two-column comparison (`Syllabus: Fri Oct 10` | `Canvas: Sun Oct 12`) is far more convincing than prose, and it's the screenshot that ends up on the slide.
 - Buttons: **Ask the professor** (→ draft → link to `/proposals`), **Dismiss**, and for resolved ones a muted "resolved ✓" row behind a toggle.
 - A **Re-scan** button wired to `POST /api/conflicts/scan`, mirroring the Forecast page's "Recompute".
-- Empty state: "No conflicts found across 3 courses, 10 assignments and 12 calendar events." Say what was checked — an empty list with no context reads like a broken feature.
+- Empty state, driven by `coverage`: "No conflicts found across 3 starred courses, 10 assignments and 12 calendar events." — and, when it applies, the honest caveat: "2 of those courses have no readable syllabus, so their exam dates couldn't be checked." Say what was checked; an empty list with no context reads like a broken feature, and a *misleadingly* empty list is worse than a broken one.
 
 **`ConflictsCard.tsx`:** amber/red `Card` with the count of open high-severity conflicts and the top one's title, linking to `/conflicts`. Returns `null` when the count is 0.
+
+**`CourseConflictsSection.tsx`:** on `/courses/[id]`, a `Card title="Date checks"` placed near the page's existing **Exams** card — which shows the syllabus's claimed dates, while yours shows whether Canvas agrees. Three states: conflicts found (the two-column comparison + **Ask the professor**), all clear ("3 syllabus dates match Canvas"), or not checkable ("this course's syllabus couldn't be read, so there was nothing to compare"). Fetch `/api/conflicts?course=<id>`; return `null` only when the course has no exam dates *and* no conflicts of any kind.
 
 ## Seed data (`scripts/seed-conflicts.ts`)
 
 Delete only `conflicts`. The demo seed already gives you courses, assignments, announcements with extracted actions, and a class schedule — so **this script should mostly add the raw ingredients, then run the real scan**, proving the detectors work rather than faking their output:
 
-1. `UPDATE courses SET exam_dates = ...` for CS 101 so the syllabus midterm lands two days off the Canvas one (D1).
-2. Insert a calendar event for a CHEM exam on the same day as the CS midterm (D3).
-3. Insert a lab event that brackets an existing assignment deadline (D4).
-4. Call your own `scanAll()` so `conflicts` is populated by the detectors themselves.
+1. `UPDATE courses SET exam_dates = ?, syllabus_source = 'html' WHERE id = 101` so the syllabus midterm lands two days off the Canvas one (D1). `seed-demo.ts` predates `syllabus_source` and leaves it null, so set it explicitly — otherwise your coverage counters classify a perfectly good demo course as unreadable.
+2. Set ENGL 240 (id 303, which `seed-demo` gives no syllabus) to `syllabus_source = 'none'`, and set CHEM 122 (id 202) to `'link_only'` with `exam_dates = NULL`. Now one course is checkable, one is unreadable and one has no syllabus — every coverage state on screen at once, which is the honest picture of real Canvas and a better demo than three green ticks.
+3. Insert a calendar event for a CHEM exam on the same day as the CS midterm (D3).
+4. Insert a lab event that brackets an existing assignment deadline (D4).
+5. Call your own `scanAll()` so `conflicts` is populated by the detectors themselves.
 
 For D2, check what `scripts/seed-demo.ts` already writes into `announcements.actions`; if one of its `due_date_change` actions is already inconsistent with the seeded `assignments.due_at`, D2 fires for free — otherwise nudge one assignment's `due_at`.
 
@@ -192,6 +236,7 @@ Seeded/store tests:
 - scan → dismiss → re-scan leaves the conflict dismissed (never resurrected)
 - a conflict that disappears from a scan is marked `resolved`, not deleted
 - `draft_clarifying_question` on a course with no `instructor_user_id` returns a helpful message instead of throwing
+- coverage: a `link_only` course counts in `coursesUnreadableSyllabus` and **not** in `coursesWithExamDates`, and a scan over a database where every syllabus is unreadable returns zero conflicts *with* a coverage summary that says why
 
 ## Demo (30 s)
 
@@ -207,3 +252,4 @@ Seeded/store tests:
 | Timezone off-by-one makes every evening deadline a "conflict" | All comparisons via `partsInTz(date, tz)` on `{year, month, day}`; never compare ISO strings or raw `Date` objects. |
 | Noise buries the real finding | Severity ordering, dismissal that sticks, and suppression of anything the announcement-proposal flow already covers. |
 | `exam_dates` is empty without an API key | Your seed script writes it directly, so the whole feature demos on seed data alone. |
+| Real Canvas courses mostly have unreadable syllabi, so D1 finds nothing | That's what `Coverage` exists for: the feature reports what it could and couldn't check instead of implying all-clear. D2, D3 and D4 need no syllabus at all, so there's always something to show. |

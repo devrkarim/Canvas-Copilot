@@ -2,20 +2,29 @@
 
 **Owner:** you
 **Branch:** `chore/feature-scaffold`
-**Size:** ~300 lines, almost all stubs. 60–90 minutes.
-**Blocking:** all four feature branches. Nobody — including you — starts a feature until this is on `main`.
+**Baseline:** commit `ad88578` (starred courses, PDF syllabi, course detail page, parallel sync)
+**Size:** ~330 lines, almost all stubs. 60–90 minutes.
+**Blocking:** all three teammate branches. Nobody — including you — starts a feature until this is on `main`.
 
 **When it's merged**, message B, C and D:
 
-> Scaffold is on `main`. `git checkout main && git pull`, confirm `git log --oneline -1` shows the scaffold commit, then branch: B → `feat/triage` (plans/02), C → `feat/conflicts` (plans/03), D → `feat/study` (plans/04). Read `plans/README.md` §3–4 and your own plan; you don't need anything else. Run `npm run check:ownership` before each commit.
+> Scaffold is on `main`. `git checkout main && git pull`, confirm `git log --oneline -1` shows the scaffold commit, then branch: B → `feat/triage` (plans/02, Part 1), C → `feat/conflicts` (plans/03, Part 2), D → `feat/study` (plans/04, Part 3). Read `plans/README.md` §2.5, §3 and §4 plus your own plan file — that's everything. Run `npm run check:ownership` before each commit.
 
 Then you start `plans/01-grade-whatif.md` on `feat/grades`, in parallel with them.
 
 ## Why
 
-Four features all want to: create tables, register chat tools, hook into sync, add a nav link, add a dashboard card, add a seed script. If each person edits `lib/db.ts` / `lib/tools/index.ts` / `Nav.tsx` / `app/page.tsx` / `package.json`, every pair of branches conflicts.
+Four features all want to: create tables, register chat tools, hook into sync, add a nav link, add a dashboard card, add a section to the course detail page, add a seed script. If each person edits `lib/db.ts` / `lib/tools/index.ts` / `Nav.tsx` / `app/page.tsx` / `app/courses/[id]/page.tsx` / `package.json`, every pair of branches conflicts.
 
 So Task 0 edits each of those files **once**, wiring in four empty, pre-named stubs. After that, every shared file is frozen and each member only fills in files nobody else touches.
+
+## What changed since the first draft of this plan
+
+The repo moved (commits `c0bf7cb` → `ad88578`). Three things affect the scaffold directly:
+
+- **`lib/db.ts` now has `migrate()` + `ADDED_COLUMNS`** for core-table columns added after release. Feature tables do *not* go through it — they go through `FEATURE_SCHEMAS` (Step 1). The `FEATURE_SCHEMAS` loop runs *after* `migrate(conn)`.
+- **`lib/sync.ts` is parallel now** (`mapLimit`, `CANVAS_CONCURRENCY`, per-course `settle()` promises) and filters to starred courses. Two small additions in Step 3: the feature-sync hook, and `export` on `CANVAS_CONCURRENCY` so features can fan out at the same rate.
+- **There's a course detail page** at `/courses/[id]`, which is a natural home for per-course feature content (this course's grade, its conflicts, its study packs). Step 5b adds a four-stub slot to it, so it never gets edited again either.
 
 ## Directory layout this creates
 
@@ -24,12 +33,16 @@ lib/features/
   schemas.ts            ← registry: pure SQL strings (imported by lib/db.ts)
   tools.ts              ← registry: chat tools
   sync.ts               ← registry: post-sync hooks
-  grades/   schema.ts  tools.ts  sync.ts  weights.ts   (stubs — you; weights.ts is read by feature 2)
+  grades/   schema.ts  tools.ts  sync.ts  weights.ts   (stubs — you; weights.ts is read by Part 1)
   triage/   schema.ts  tools.ts  sync.ts               (stubs — teammate B)
   conflicts/schema.ts  tools.ts  sync.ts               (stubs — teammate C)
   study/    schema.ts  tools.ts  sync.ts               (stubs — teammate D)
 app/components/cards/
-  GradesCard.tsx  TriageCard.tsx  ConflictsCard.tsx  StudyCard.tsx   (stubs)
+  GradesCard.tsx  TriageCard.tsx  ConflictsCard.tsx  StudyCard.tsx   (stubs — dashboard)
+app/components/course/
+  CourseSections.tsx                                   (registry)
+  CourseGradesSection.tsx  CourseTriageSection.tsx
+  CourseConflictsSection.tsx  CourseStudySection.tsx   (stubs — course detail page)
 app/components/FeatureCards.tsx
 app/grades/page.tsx  app/triage/page.tsx  app/conflicts/page.tsx  app/study/page.tsx  (stubs)
 scripts/seed-grades.ts  seed-triage.ts  seed-conflicts.ts  seed-study.ts            (stubs)
@@ -65,15 +78,24 @@ Each of the four stubs, e.g. `lib/features/grades/schema.ts`:
 export const GRADES_SCHEMA = ``;
 ```
 
-`lib/db.ts` — the only edit (two lines):
+`lib/db.ts` — the only edit (two lines), placed **after `migrate(conn)`** so core columns are settled before feature tables are created:
 
 ```ts
 import { FEATURE_SCHEMAS } from "./features/schemas.ts";   // top of file
-// ...inside db(), right after conn.exec(SCHEMA):
-for (const s of FEATURE_SCHEMAS) if (s.trim()) conn.exec(s);
+
+export function db(): Database.Database {
+  // …unchanged…
+  conn.exec(SCHEMA);
+  migrate(conn);
+  for (const s of FEATURE_SCHEMAS) if (s.trim()) conn.exec(s);   // ← add
+  globalForDb.__db = conn;
+  return conn;
+}
 ```
 
-Everything is `CREATE TABLE IF NOT EXISTS`, so this is additive and safe on an existing `data/app.db`.
+Everything is `CREATE TABLE IF NOT EXISTS`, so this is additive and safe on an existing `data/app.db` — which matters more than it used to, since everyone already has one with real synced data in it.
+
+`ADDED_COLUMNS` / `migrate()` stays for **core** tables only (it currently backfills `courses.syllabus_text` and `syllabus_source`). Features never add columns to core tables, so no feature ever touches it — say so in a comment above it while you're here.
 
 ## Step 2 — Tool registry (+ extract shared helpers)
 
@@ -150,7 +172,7 @@ This is the only thing one feature needs from another, and creating it now — a
  * Share of a course's final grade that one assignment carries, derived from
  * synced Canvas assignment groups.
  *
- * Owner: you (filled in by plans/01). Consumer: feature 2 (triage), which imports
+ * Owner: you (filled in by plans/01). Consumer: Part 1 (triage, plans/02), which imports
  * this from day one and falls back to its own syllabus-based estimate on null.
  *
  * ⚠️ SIGNATURE IS FROZEN. Changing it breaks feat/triage. Fill in the body, not the shape.
@@ -208,13 +230,32 @@ import type { FeatureSyncCtx } from "../sync";
 export async function syncGrades(_ctx: FeatureSyncCtx): Promise<void> {}
 ```
 
-`lib/sync.ts` — the only edit, immediately before `return report;` in `runSync`:
+`lib/sync.ts` — two edits, both one line.
+
+1. Export the concurrency limit so features fan out at the same rate instead of inventing their own (see `plans/README.md` §2.5.4):
 
 ```ts
-await runFeatureSyncs({ warnings: report.warnings, extract: extract && llmConfigured() });
+export const CANVAS_CONCURRENCY = 6;   // was: const CANVAS_CONCURRENCY = 6;
 ```
 
-> Note the ctx-object indirection: it exists so `lib/features/sync.ts` doesn't import `SyncReport` from `lib/sync.ts`, which would be a cycle.
+2. Call the hook at the very end of `runSync`, after the extraction block and immediately before `return report;`:
+
+```ts
+  if (extract && llmConfigured()) {
+    report.syllabiExtracted = await extractNewSyllabi(report);
+    report.proposalsCreated += await processNewAnnouncements(report);
+  } else if (extract) {
+    report.warnings.push("ANTHROPIC_API_KEY not set — skipped syllabus/announcement extraction");
+  }
+
+  await runFeatureSyncs({ warnings: report.warnings, extract: extract && llmConfigured() });   // ← add
+
+  return report;
+```
+
+Placing it last matters: by then `courses` holds exactly the starred set, stale rows are deleted, and `syllabus_text` / `late_policy` / `exam_dates` are populated — which is what the feature hooks read.
+
+> Note the ctx-object indirection: it exists so `lib/features/sync.ts` doesn't import `SyncReport` from `lib/sync.ts`, which would be a cycle. Don't "simplify" it by passing `report`.
 
 ## Step 4 — Nav + stub pages
 
@@ -275,6 +316,48 @@ export function FeatureCards() {
 
 Each card fetches its own `/api/<feature>` endpoint in a `useEffect` and renders `null` while empty, so a feature that isn't merged yet costs nothing.
 
+## Step 5b — Course detail page slot
+
+`/courses/[id]` is new since the last draft, and it's where per-course feature content belongs: this course's grade breakdown, its date conflicts, its study packs. Give it the same treatment as the dashboard.
+
+`app/components/course/CourseGradesSection.tsx` (and the other three):
+
+```tsx
+"use client";
+/** Owner: you (plans/01). Renders on /courses/[id]. Return null until implemented. */
+export function CourseGradesSection({ courseId }: { courseId: number }) {
+  void courseId;
+  return null;
+}
+```
+
+`app/components/course/CourseSections.tsx`:
+
+```tsx
+"use client";
+import { CourseGradesSection } from "./CourseGradesSection";
+import { CourseTriageSection } from "./CourseTriageSection";
+import { CourseConflictsSection } from "./CourseConflictsSection";
+import { CourseStudySection } from "./CourseStudySection";
+
+/** Per-feature sections on the course detail page. Each stub owns its own file;
+ *  this registry is frozen after the scaffold. */
+export function CourseSections({ courseId }: { courseId: number }) {
+  return (
+    <>
+      <CourseGradesSection courseId={courseId} />
+      <CourseTriageSection courseId={courseId} />
+      <CourseConflictsSection courseId={courseId} />
+      <CourseStudySection courseId={courseId} />
+    </>
+  );
+}
+```
+
+`app/courses/[id]/page.tsx` — the only edit: import it and render `<CourseSections courseId={course.id} />` directly after the `Late policy` card and before the `Syllabus` card (the syllabus is long, so anything after it is below the fold).
+
+Each section fetches `/api/<feature>?course=<id>` itself and returns `null` when it has nothing, so an unmerged feature costs the page nothing.
+
 ## Step 6 — Seed scripts + package.json
 
 Stub, e.g. `scripts/seed-grades.ts`:
@@ -321,17 +404,17 @@ import { execSync } from "node:child_process";
 
 const OWNED = {
   grades:    [/^lib\/features\/grades\//, /^app\/grades\//, /^app\/api\/grades\//,
-              /^app\/components\/cards\/GradesCard\.tsx$/, /^scripts\/seed-grades\.ts$/,
-              /^tests\/grades\.test\.ts$/, /^docs\/features\/grades\.md$/],
+              /^app\/components\/cards\/GradesCard\.tsx$/, /^app\/components\/course\/CourseGradesSection\.tsx$/,
+              /^scripts\/seed-grades\.ts$/, /^tests\/grades\.test\.ts$/, /^docs\/features\/grades\.md$/],
   triage:    [/^lib\/features\/triage\//, /^app\/triage\//, /^app\/api\/triage\//,
-              /^app\/components\/cards\/TriageCard\.tsx$/, /^scripts\/seed-triage\.ts$/,
-              /^tests\/triage\.test\.ts$/, /^docs\/features\/triage\.md$/],
+              /^app\/components\/cards\/TriageCard\.tsx$/, /^app\/components\/course\/CourseTriageSection\.tsx$/,
+              /^scripts\/seed-triage\.ts$/, /^tests\/triage\.test\.ts$/, /^docs\/features\/triage\.md$/],
   conflicts: [/^lib\/features\/conflicts\//, /^app\/conflicts\//, /^app\/api\/conflicts\//,
-              /^app\/components\/cards\/ConflictsCard\.tsx$/, /^scripts\/seed-conflicts\.ts$/,
-              /^tests\/conflicts\.test\.ts$/, /^docs\/features\/conflicts\.md$/],
+              /^app\/components\/cards\/ConflictsCard\.tsx$/, /^app\/components\/course\/CourseConflictsSection\.tsx$/,
+              /^scripts\/seed-conflicts\.ts$/, /^tests\/conflicts\.test\.ts$/, /^docs\/features\/conflicts\.md$/],
   study:     [/^lib\/features\/study\//, /^app\/study\//, /^app\/api\/study\//,
-              /^app\/components\/cards\/StudyCard\.tsx$/, /^scripts\/seed-study\.ts$/,
-              /^tests\/study\.test\.ts$/, /^docs\/features\/study\.md$/],
+              /^app\/components\/cards\/StudyCard\.tsx$/, /^app\/components\/course\/CourseStudySection\.tsx$/,
+              /^scripts\/seed-study\.ts$/, /^tests\/study\.test\.ts$/, /^docs\/features\/study\.md$/],
 };
 
 const sh = (c) => execSync(c, { encoding: "utf8" }).trim();
@@ -369,13 +452,15 @@ Also add `docs/features/.gitkeep`, and append to `AGENTS.md`:
 ```
 ## Feature branches (see plans/README.md)
 Frozen after chore/feature-scaffold: lib/db.ts, lib/tools/index.ts, lib/tools/shared.ts,
-lib/sync.ts, lib/briefing.ts, lib/canvas/**, lib/features/{schemas,tools,sync}.ts,
-app/page.tsx, app/components/{Nav,ui,FeatureCards}.tsx,
-app/api/{status,dashboard,sync,chat,briefing,proposals,forecast}/**,
-scripts/seed-demo.ts, package.json, README.md, .github/**.
+lib/sync.ts, lib/briefing.ts, lib/canvas/**, lib/extract/**, lib/features/{schemas,tools,sync}.ts,
+app/page.tsx, app/courses/**, app/components/{Nav,ui,Markdown,FeatureCards}.tsx,
+app/components/course/CourseSections.tsx,
+app/api/{status,dashboard,sync,chat,briefing,proposals,forecast,courses}/**,
+scripts/seed-demo.ts, package.json, README.md, to-do.md, .github/**.
 Own only: lib/features/<yours>/**, app/<yours>/**, app/api/<yours>/**,
-app/components/cards/<Yours>Card.tsx, scripts/seed-<yours>.ts, tests/<yours>.test.ts,
-docs/features/<yours>.md.   Run `npm run check:ownership` before every commit.
+app/components/cards/<Yours>Card.tsx, app/components/course/Course<Yours>Section.tsx,
+scripts/seed-<yours>.ts, tests/<yours>.test.ts, docs/features/<yours>.md.
+Run `npm run check:ownership` before every commit.
 ```
 
 ## Step 9 — Rewrite CODEOWNERS and the PR template
@@ -397,25 +482,27 @@ Replace the body of `.github/CODEOWNERS` with:
 /README.md                  @you
 
 # Feature 1 — grades (you)
-/lib/features/grades/               @you
-/app/grades/                        @you
-/app/api/grades/                    @you
-/app/components/cards/GradesCard.tsx @you
-/scripts/seed-grades.ts             @you
-/tests/grades.test.ts               @you
-/docs/features/grades.md            @you
+/lib/features/grades/                              @you
+/app/grades/                                       @you
+/app/api/grades/                                   @you
+/app/components/cards/GradesCard.tsx               @you
+/app/components/course/CourseGradesSection.tsx     @you
+/scripts/seed-grades.ts                            @you
+/tests/grades.test.ts                              @you
+/docs/features/grades.md                           @you
 
-# Feature 2 — triage (B)
-/lib/features/triage/               @person-b
-/app/triage/                        @person-b
-/app/api/triage/                    @person-b
-/app/components/cards/TriageCard.tsx @person-b
-/scripts/seed-triage.ts             @person-b
-/tests/triage.test.ts               @person-b
-/docs/features/triage.md            @person-b
+# Part 1 — triage (B)
+/lib/features/triage/                              @person-b
+/app/triage/                                       @person-b
+/app/api/triage/                                   @person-b
+/app/components/cards/TriageCard.tsx               @person-b
+/app/components/course/CourseTriageSection.tsx     @person-b
+/scripts/seed-triage.ts                            @person-b
+/tests/triage.test.ts                              @person-b
+/docs/features/triage.md                           @person-b
 
-# Feature 3 — conflicts (C)   … same seven lines with conflicts/ConflictsCard/@person-c
-# Feature 4 — study (D)       … same seven lines with study/StudyCard/@person-d
+# Part 2 — conflicts (C)  … same eight lines with conflicts/ConflictsCard/CourseConflictsSection/@person-c
+# Part 3 — study (D)      … same eight lines with study/StudyCard/CourseStudySection/@person-d
 ```
 
 CODEOWNERS is last-match-wins, so the broad `/lib/` rule must come *before* the feature rules — that way a stray edit to a frozen file lands on your review queue, while feature paths route to their owner.
@@ -441,7 +528,10 @@ Replace the `## Area` block in `.github/pull_request_template.md`:
 - [ ] `npm run check:ownership` runs on `chore/feature-scaffold` and prints the "no rules, skipping" line (the scaffold branch is deliberately exempt)
 - [ ] Sanity-check the guard: `git checkout -b feat/triage && touch lib/db.ts && npm run check:ownership` exits 1 and names `lib/db.ts`; then delete the branch
 - [ ] `lib/features/grades/weights.ts` exists, exports `weightForAssignment` returning `null`, and typechecks — teammate B's branch depends on this file existing
-- [ ] `npm run dev`: all eight nav links load, the dashboard is visually unchanged
+- [ ] `CANVAS_CONCURRENCY` is exported from `lib/sync.ts` — teammate D imports it
+- [ ] `npm run dev`: all eight nav links load, the dashboard and `/courses/<id>` are visually unchanged
+- [ ] `npm run seed && npm run dev`, open `/courses/101`: the page still renders (the `CourseSections` slot renders nothing, which is correct)
+- [ ] `npm test` still passes `tests/sync.test.ts` — the mock-Canvas integration suite is the thing that catches a bad `runSync` edit
 - [ ] Chat still answers "what's due this week?" (proves the tool registry didn't break the runner)
 - [ ] Merged to `main`, and the kickoff message at the top of this file has been sent to B, C and D
 
